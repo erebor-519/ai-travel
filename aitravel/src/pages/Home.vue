@@ -1,9 +1,12 @@
 <script setup>
 import MapView from '../features/map/MapView.vue'
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const mapLoaded = ref(false)
 const mapError = ref(null)
+const router = useRouter()
+const travelInput = ref('')
 
 const handleMapLoaded = (mapInstance) => {
   console.log('地图加载成功:', mapInstance)
@@ -23,8 +26,14 @@ const destinations = [
 ]
 
 const handleGeneratePlan = () => {
-  // 这里可以添加AI生成旅行计划的逻辑
-  alert('生成旅行计划功能开发中...')
+  if (travelInput.value.trim()) {
+    router.push({ 
+      name: 'TravelPlan', 
+      query: { input: encodeURIComponent(travelInput.value) } 
+    })
+  } else {
+    alert('请输入旅行需求')
+  }
 }
 </script>
 
@@ -70,6 +79,7 @@ const handleGeneratePlan = () => {
           <h3>旅行规划助手</h3>
           <p>输入您的旅行需求，AI 将为您生成个性化旅行计划</p>
           <input 
+            v-model="travelInput"
             type="text" 
             placeholder="例如：北京5日游，喜欢历史文化" 
             class="travel-input" 

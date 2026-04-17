@@ -4,6 +4,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 const Home = () => import('../pages/Home.vue')
 const Explore = () => import('../pages/Explore.vue')
 const POIExperience = () => import('../pages/POIExperience.vue')
+const TravelPlan = () => import('../pages/TravelPlan.vue')
 
 const routes = [
   {
@@ -28,6 +29,14 @@ const routes = [
     component: POIExperience,
     meta: {
       title: 'AI 智能旅行助手 - 景点体验'
+    }
+  },
+  {
+    path: '/travel-plan',
+    name: 'TravelPlan',
+    component: TravelPlan,
+    meta: {
+      title: 'AI 智能旅行助手 - 旅行计划'
     }
   },
   // 404页面
