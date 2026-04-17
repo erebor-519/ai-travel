@@ -167,7 +167,7 @@ class AMapService {
     // 直接调用大模型智能提取地点
     try {
       // 使用fetch直接调用Vite代理
-      const response = await fetch('https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions', {
+      const response = await fetch('/api/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
