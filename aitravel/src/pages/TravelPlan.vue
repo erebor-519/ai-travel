@@ -21,7 +21,7 @@ const leftPanelCollapsed = ref(false)
 const amapService = AMapService
 
 const client = new OpenAI({
-  baseURL: 'https://footmarks.world/api',
+  baseURL: 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2',
   apiKey: 'b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm',
   defaultHeaders: { 'X-Failover-Enabled': 'true' },
   dangerouslyAllowBrowser: true
