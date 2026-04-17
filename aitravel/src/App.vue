@@ -1,5 +1,6 @@
 <script setup>
 // App.vue 只做布局和路由视图，不放业务逻辑
+import { Analytics } from '@vercel/analytics/vue';
 </script>
 
 <template>
@@ -38,6 +39,9 @@
     <footer class="footer">
       <p>&copy; 2026 AI 旅行助手 | 让旅行更智能</p>
     </footer>
+    
+    <!-- Vercel Web Analytics -->
+    <Analytics />
   </div>
 </template>
 
