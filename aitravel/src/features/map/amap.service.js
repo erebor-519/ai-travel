@@ -119,46 +119,45 @@ class AMapService {
   }
 
   // 地理编码服务
-  async geocode(address) {
+  async geocode(address, city = '') {
     // 不加载SDK，直接使用fetch调用高德地图地理编码API
-    try {
-      const response = await fetch(`https://restapi.amap.com/v3/geocode/geo?address=${encodeURIComponent(address)}&key=${this.serviceKey}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+    let url = `https://restapi.amap.com/v3/geocode/geo?address=${encodeURIComponent(address)}&key=${this.serviceKey}`;
+    if (city) {
+      url += `&city=${encodeURIComponent(city)}`;
+    }
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
       }
+    });
 
-      const data = await response.json();
-      if (data.status === '1' && data.geocodes && data.geocodes.length > 0) {
-        const geocode = data.geocodes[0];
-        const [lngStr, latStr] = geocode.location.split(',');
-        
-        // 验证坐标格式有效性
-        if (!lngStr || !latStr) {
-          throw new Error(`无效的坐标格式: ${geocode.location}`);
-        }
-        
-        const lng = parseFloat(lngStr);
-        const lat = parseFloat(latStr);
-        
-        if (isNaN(lng) || isNaN(lat)) {
-          throw new Error(`无效的坐标值: ${geocode.location}`);
-        }
-        
-        return {
-          location: [lng, lat]
-        };
-      } else {
-        throw new Error(`地理编码失败: ${data.info || '未知错误'}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === '1' && data.geocodes && data.geocodes.length > 0) {
+      const geocode = data.geocodes[0];
+      const [lngStr, latStr] = geocode.location.split(',');
+      
+      // 验证坐标格式有效性
+      if (!lngStr || !latStr) {
+        throw new Error(`无效的坐标格式: ${geocode.location}`);
       }
-    } catch (error) {
-      console.warn(`无法解析地点: ${address}`, error);
-      return null;
+      
+      const lng = parseFloat(lngStr);
+      const lat = parseFloat(latStr);
+      
+      if (isNaN(lng) || isNaN(lat)) {
+        throw new Error(`无效的坐标值: ${geocode.location}`);
+      }
+      
+      return {
+        location: [lng, lat]
+      };
+    } else {
+      throw new Error(`地理编码失败: ${data.info || '未知错误'}`);
     }
   }
 
@@ -178,7 +177,7 @@ class AMapService {
           messages: [
             {
               'role': 'system',
-              'content': '你是一个地点提取和旅行路线规划专家，请从以下旅行计划中提取最重要的16个以内主要地点（优先选择著名景点）并按最合理的最体贴的游览路线进行排序，防止路线绕来绕去。\n\n要求：\n1. 每个地点一行\n2. 尽量包含完整的地点名称（如：故宫博物院、西湖风景名胜区）\n3. 每个地点前面必须附加所在城市，格式为：城市，地点名称\n4. 只提取真实存在的旅游景点\n5. 不要提取通用词汇（如：酒店、餐厅、市区）\n6. 确保地点名称准确，避免错别字\n\n输出格式示例：\n故宫博物院（北京）\n西湖风景名胜区（杭州）\n兵马俑（西安）'
+              'content': '你是一个地点提取和旅行路线规划专家，请从以下旅行计划中提取最重要的16个以内的地点（优先选择著名景点）并严格按旅行计划顺序进行排序。如地点不在中国大陆则翻译提取的地点和各项信息为当地的语言。\n\n要求：\n1. 每个地点一行\n2. 尽量包含完整的地点名称（如：故宫博物院、西湖风景名胜区）\n3. 每个地点前面附加所在城市，如不在中国大陆则要在前面附加国家或地区并使用当地的语言，如国家为美国就翻译成英语，例(USA San Francisco Golden Gate Bridge)，格式为：城市/国家/地区 地点名称，例（上海 东方明珠）。严格遵循上述格式\n4. 只提取真实存在的旅游景点\n5. 不要提取通用词汇（如：酒店、餐厅、市区）\n6. 确保地点名称准确，避免错别字\n\n输出格式示例：\n北京 故宫博物院\n杭州 西湖风景名胜区\n西安 兵马俑'
             },
             {
               'role': 'user',
@@ -275,28 +274,40 @@ class AMapService {
         const uniqueAIPlaces = [...new Set(aiPlaces)];
         
         // 限制地点数量，最多8个
-        const limitedAIPlaces = uniqueAIPlaces.slice(0, 8);
+        const limitedAIPlaces = uniqueAIPlaces;
 
         console.log('去重后的地点:', uniqueAIPlaces);
         console.log('限制后的地点:', limitedAIPlaces);
         
-        // 解析地点，提取纯地点名称（用于地理编码）和显示名称
+        // 解析地点，提取城市信息、纯地点名称（用于地理编码）和显示名称
         const parsedPlaces = limitedAIPlaces.map(fullPlace => {
-          // 尝试解析格式：地点名称（城市名）
+          // 尝试解析格式：城市/国家/地区 地点名称
           let displayName = fullPlace;
           let geocodeName = fullPlace;
+          let city = '';
           
-          // 匹配中文括号
-          const match = fullPlace.match(/^(.+?)[（(](.+?)[）)]$/);
-          if (match) {
-            displayName = fullPlace;
-            geocodeName = match[1].trim(); // 只使用地点名称进行地理编码
-            console.log(`解析地点: ${fullPlace} -> 地点名称: ${geocodeName}, 城市: ${match[2]}`);
+          // 按空格分割，提取城市和地点名称
+          const parts = fullPlace.split(' ');
+          if (parts.length >= 2) {
+            // 第一个部分是城市/国家/地区，其余部分是地点名称
+            city = parts[0];
+            geocodeName = parts.slice(1).join(' ');
+            console.log(`解析地点: ${fullPlace} -> 城市: ${city}, 地点名称: ${geocodeName}`);
+          } else {
+            // 匹配中文括号格式：地点名称（城市名）
+            const match = fullPlace.match(/^(.+?)[（(](.+?)[）)]$/);
+            if (match) {
+              displayName = fullPlace;
+              geocodeName = match[1].trim(); // 只使用地点名称进行地理编码
+              city = match[2].trim();
+              console.log(`解析地点: ${fullPlace} -> 地点名称: ${geocodeName}, 城市: ${city}`);
+            }
           }
           
           return {
             displayName: displayName,
-            geocodeName: geocodeName
+            geocodeName: geocodeName,
+            city: city
           };
         });
         
@@ -307,12 +318,13 @@ class AMapService {
         for (let i = 0; i < parsedPlaces.length; i++) {
           const placeObj = parsedPlaces[i];
           const place = placeObj.geocodeName;
+          const city = placeObj.city;
           try {
-            // 增加延迟，避免超过API调用限制
-            await new Promise(resolve => setTimeout(resolve, i * 200));
-            const geocode = await this.geocode(place);
+            // 增加延迟，避免超过API调用限制（从300ms增加到600ms）
+            await new Promise(resolve => setTimeout(resolve, i * 600));
+            const geocode = await this.geocode(place, city);
             if (geocode && geocode.location) {
-              console.log(`地理编码成功: ${place} -> ${geocode.location}`);
+              console.log(`地理编码成功: ${place} (城市: ${city}) -> ${geocode.location}`);
               geocodedAIPlaces.push({
                 name: placeObj.displayName,
                 location: geocode.location
@@ -323,12 +335,12 @@ class AMapService {
           } catch (error) {
             if (error.message.includes('CUQPS_HAS_EXCEEDED_THE_LIMIT')) {
               console.warn(`地点 ${place} 超过API调用限制，稍后重试`);
-              // 尝试重试一次，增加更长的延迟
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              // 尝试重试一次，增加更长的延迟（从2000ms增加到3000ms）
+              await new Promise(resolve => setTimeout(resolve, 3000));
               try {
-                const geocode = await this.geocode(place);
+                const geocode = await this.geocode(place, city);
                 if (geocode && geocode.location) {
-                  console.log(`地理编码成功(重试): ${place} -> ${geocode.location}`);
+                  console.log(`地理编码成功(重试): ${place} (城市: ${city}) -> ${geocode.location}`);
                   geocodedAIPlaces.push({
                     name: placeObj.displayName,
                     location: geocode.location

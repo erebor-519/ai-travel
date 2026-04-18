@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import OpenAI from 'openai'
 import AMapService from '../features/map/amap.service.js'
@@ -17,6 +17,8 @@ const isRouteLoading = ref(false)
 const routeErrorMessage = ref('')
 const showMap = ref(true)
 const leftPanelCollapsed = ref(false)
+let originalBodyStyle = ''
+let currentDragRoute = null
 
 const amapService = AMapService
 
@@ -51,7 +53,7 @@ const analysis_system_prompt = `你是一个专业的旅行规划师，擅长根
 2. [注意事项2]
 ...
 
-请确保计划详细、合理，符合用户的需求。`
+请确保计划详细、合理，旅行路线不能重复，一天游玩的地方不宜相距太远，计划符合用户的需求。`
 
 const generateTravelPlan = async () => {
   if (!travelInput.value.trim()) {
@@ -63,6 +65,23 @@ const generateTravelPlan = async () => {
   errorMessage.value = ''
   planResult.value = ''
   showMap.value = false
+  
+  if (currentDragRoute) {
+    try {
+      currentDragRoute.hide()
+    } catch (error) {
+      console.warn('隐藏路径规划失败:', error)
+    }
+    currentDragRoute = null
+  }
+  
+  if (window.currentMap) {
+    try {
+      window.currentMap.clearMap()
+    } catch (error) {
+      console.warn('清除地图失败:', error)
+    }
+  }
 
   try {
     const response = await client.chat.completions.create({
@@ -86,6 +105,7 @@ const generateTravelPlan = async () => {
 
     const content = response.choices[0].message.content.trim()
     planResult.value = content
+    await generateRoutePlan()
   } catch (error) {
     console.error('生成旅行计划失败:', error)
     if (error.response) {
@@ -152,20 +172,23 @@ const showRouteOnMap = async (places) => {
 
   const path = places.map(place => place.location)
 
-  let map
-  if (window.currentMap) {
-    map = window.currentMap
-    map.clearMap()
-  } else {
-    map = new window.AMap.Map("container", {
-      resizeEnable: true
-    })
-    window.currentMap = map
+  try {
+    if (window.currentMap) {
+      window.currentMap.destroy()
+      window.currentMap = null
+    }
+  } catch (error) {
+    console.warn('销毁旧地图失败:', error)
   }
+  
+  const map = new window.AMap.Map("container", {
+    resizeEnable: true
+  })
+  window.currentMap = map
 
   window.AMap.plugin("AMap.DragRoute", function() {
-    const dragRoute = new window.AMap.DragRoute(map, path, window.AMap.DrivingPolicy.LEAST_FEE)
-    dragRoute.search()
+    currentDragRoute = new window.AMap.DragRoute(map, path, window.AMap.DrivingPolicy.LEAST_FEE)
+    currentDragRoute.search()
     
     map.setCenter(places[0].location)
     map.setZoom(13)
@@ -188,20 +211,73 @@ const initMap = async () => {
       zoom: 11
     })
     window.currentMap = map
+  } else {
+    try {
+      window.currentMap.getZoom()
+    } catch (error) {
+      console.warn('旧地图实例不可用，重新创建:', error)
+      const map = new window.AMap.Map("container", {
+        resizeEnable: true,
+        zoom: 11
+      })
+      window.currentMap = map
+    }
   }
 }
 
 onMounted(() => {
+  originalBodyStyle = document.body.style.cssText
+  document.body.style.margin = '0'
+  document.body.style.padding = '0'
+  document.body.style.overflow = 'hidden'
+  document.body.style.height = '100vh'
+  document.body.style.width = '100vw'
+  
   if (route.query.input) {
     travelInput.value = decodeURIComponent(route.query.input)
     generateTravelPlan()
   }
   initMap()
 })
+
+onUnmounted(() => {
+  document.body.style.cssText = originalBodyStyle
+  
+  if (window.currentMap) {
+    try {
+      window.currentMap.destroy()
+    } catch (error) {
+      console.warn('销毁地图失败:', error)
+    }
+    window.currentMap = null
+  }
+})
 </script>
 
 <template>
   <div class="travel-plan-page">
+    <!-- 头部导航 -->
+    <header class="header">
+      <h1>AI 智能旅行助手</h1>
+      <nav>
+        <ul>
+          <li>
+            <router-link to="/">首页</router-link>
+          </li>
+          <li>
+            <router-link to="/explore">探索</router-link>
+          </li>
+          <li>
+            <router-link to="/poi-experience">景点体验</router-link>
+          </li>
+          <li>
+            <a href="#">关于我们</a>
+          </li>
+        </ul>
+      </nav>
+    </header>
+    
+    <!-- 主要内容 -->
     <div class="content-wrapper">
       <div class="left-panel" :class="{ collapsed: leftPanelCollapsed }">
         <button class="collapse-btn" @click="leftPanelCollapsed = !leftPanelCollapsed">
@@ -234,13 +310,6 @@ onMounted(() => {
             <div class="plan-content">
               <pre>{{ planResult }}</pre>
             </div>
-            <button 
-              class="generate-btn route-btn" 
-              @click="generateRoutePlan"
-              :disabled="isRouteLoading"
-            >
-              {{ isRouteLoading ? '生成路径中...' : '生成路径规划' }}
-            </button>
           </div>
           
           <div v-if="routeErrorMessage" class="error-message">
@@ -251,7 +320,6 @@ onMounted(() => {
       <div class="right-panel">
         <div class="map-section">
           <div id="container"></div>
-          <div id="tip" class="tip">请拖拽路径试试</div>
         </div>
       </div>
     </div>
@@ -259,38 +327,96 @@ onMounted(() => {
 </template>
 
 <style scoped>
-html,
-body,
 #container {
   width: 100%;
   height: 100%;
 }
 
 .travel-plan-page {
-  height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
+  margin: 0;
+  padding: 0;
+  background: white;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+  color: var(--text-white);
+  padding: var(--spacing-md) var(--spacing-xl);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: var(--shadow-md);
+  z-index: 2000;
+  flex-shrink: 0;
+}
+
+.header h1 {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  margin: 0;
+}
+
+.header nav ul {
+  display: flex;
+  list-style: none;
+  gap: var(--spacing-xl);
+  margin: 0;
+  padding: 0;
+}
+
+.header nav a,
+.header nav router-link {
+  color: var(--text-white);
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+}
+
+.header nav a:hover,
+.header nav router-link:hover {
+  background: rgba(255, 255, 255, 0.1);
+  text-decoration: none;
+}
+
+.header nav router-link.active {
+  background: rgba(255, 255, 255, 0.2);
+  font-weight: 600;
 }
 
 .content-wrapper {
   display: flex;
-  height: 100%;
+  flex: 1;
   width: 100%;
   position: relative;
+  min-height: 0;
 }
 
 .left-panel {
   position: absolute;
-  top: 15px;
+  top: 10px;
   left: 15px;
-  width: 380px;
+  width: 190px;
   max-width: calc(100vw - 30px);
   max-height: calc(100vh - 30px);
   overflow-y: auto;
-  padding: var(--spacing-lg);
+  padding: var(--spacing-sm);
   background: var(--bg-primary);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
-  z-index: 100;
+  z-index: 1000;
   transition: width 0.3s ease, padding 0.3s ease;
 }
 
@@ -374,6 +500,16 @@ body,
     width: auto;
     min-height: auto;
   }
+  
+  .left-panel {
+    top: auto;
+    left: auto;
+    max-height: none;
+  }
+  
+  .tip {
+    top: 80px;
+  }
 }
 
 .plan-generator {
@@ -393,36 +529,37 @@ body,
 }
 
 .plan-generator h2 {
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: var(--spacing-sm);
   color: var(--text-primary);
-  font-size: var(--font-size-2xl);
+  font-size: var(--font-size-lg);
   text-align: center;
+  width: 144px;
 }
 
 .input-section {
   display: flex;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
   flex-wrap: wrap;
 }
 
 .travel-input {
   flex: 1;
-  min-width: 200px;
-  padding: var(--spacing-md);
+  min-width: 100px;
+  padding: var(--spacing-xs);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
 }
 
 .generate-btn {
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: var(--spacing-xs) var(--spacing-sm);
   background: var(--primary-color);
   color: white;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
   transition: background 0.3s ease;
 }
 
@@ -437,27 +574,27 @@ body,
 
 .error-message {
   color: var(--error-color);
-  padding: var(--spacing-md);
+  padding: var(--spacing-xs);
   background: var(--error-bg);
   border-radius: var(--radius-md);
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: var(--spacing-sm);
 }
 
 .plan-result {
-  margin-top: var(--spacing-lg);
+  margin-top: var(--spacing-sm);
 }
 
 .plan-result h3 {
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
   color: var(--text-primary);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-base);
 }
 
 .plan-content {
   background: var(--bg-secondary);
-  padding: var(--spacing-lg);
+  padding: var(--spacing-sm);
   border-radius: var(--radius-md);
-  max-height: 300px;
+  max-height: 150px;
   overflow-y: auto;
 }
 
@@ -471,8 +608,8 @@ body,
   white-space: pre-wrap;
   word-wrap: break-word;
   color: var(--text-primary);
-  font-size: var(--font-size-base);
-  line-height: 1.6;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
 }
 
 .route-btn {
@@ -488,22 +625,29 @@ body,
   width: 100%;
   height: 100%;
   position: relative;
+  z-index: 1;
 }
 
 #container {
   width: 100%;
   height: 100%;
+  z-index: 1;
 }
 
-.tip {
-  background-color: white;
-  padding: 10px 20px;
-  border-radius: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-  font-size: 14px;
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+  }
+  
+  .header nav ul {
+    gap: var(--spacing-md);
+  }
+  
+  .left-panel {
+    top: 10px;
+    max-height: calc(100vh - 120px);
+  }
 }
 </style>
