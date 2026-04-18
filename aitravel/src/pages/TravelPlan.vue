@@ -634,6 +634,14 @@ onUnmounted(() => {
   z-index: 1;
 }
 
+/* 隐藏高德地图水印 */
+#container :deep(.amap-copyright),
+#container :deep(.amap-logo) {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
 @media (max-width: 768px) {
   .header {
     flex-direction: column;
