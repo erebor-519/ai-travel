@@ -1,4 +1,8 @@
 // 高德地图服务
+import placeExtractionPrompt from './place-extraction-prompt.md?raw';
+import placeValidationPrompt from './place-validation-prompt.md?raw';
+import cityExtractionPrompt from './city-extraction-prompt.md?raw';
+
 class AMapService {
   constructor() {
     this.map = null;
@@ -68,7 +72,7 @@ class AMapService {
       // 构造途径点参数
       const waypointsParam = waypoints.length > 0 ? `&waypoints=${waypoints.map(p => p.join(',')).join('|')}` : '';
       
-      const response = await fetch(`https://restapi.amap.com/v3/direction/driving?origin=${origin.join(',')}&destination=${destination.join(',')}${waypointsParam}&key=${this.serviceKey}`, {
+      const response = await fetch(`/amap/v3/direction/driving?origin=${origin.join(',')}&destination=${destination.join(',')}${waypointsParam}&key=${this.serviceKey}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'
@@ -118,11 +122,70 @@ class AMapService {
     }
   }
 
-  // 地理编码服务
-  async geocode(address, city = '') {
-    // 不加载SDK，直接使用fetch调用高德地图地理编码API
+  // POI搜索服务（风景名胜）
+  async geocode(address, city = '', poiType = '') {
+    // 使用高德地图POI搜索API
     const cityParam = city ? `&city=${encodeURIComponent(city)}` : '';
-    const response = await fetch(`https://restapi.amap.com/v3/geocode/geo?address=${encodeURIComponent(address)}${cityParam}&key=${this.serviceKey}`, {
+    // 如果有指定POI类型，就只用该类型；否则用默认类型组合
+    const typesParam = poiType ? `&types=${encodeURIComponent(poiType)}` : '&types=风景名胜区|风景名胜|景点|历史遗迹|博物馆|公园广场|观景点|文化场馆|公园|寺庙|教堂|古迹|古建筑|世界遗产|酒店|宾馆|民宿|青旅|餐饮|中餐厅|西餐厅|咖啡馆|快餐|商场|购物中心|便利店|地铁站|火车站|机场|汽车站|停车场|厕所|银行|医院';
+    const response = await fetch(`/amap/v3/place/text?keywords=${encodeURIComponent(address)}${cityParam}${typesParam}&offset=1&page=1&key=${this.serviceKey}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === '1' && data.pois && data.pois.length > 0) {
+      const poi = data.pois[0];
+      const [lngStr, latStr] = poi.location.split(',');
+      
+      // 验证坐标格式有效性
+      if (!lngStr || !latStr) {
+        throw new Error(`无效的坐标格式: ${poi.location}`);
+      }
+      
+      const lng = parseFloat(lngStr);
+      const lat = parseFloat(latStr);
+      
+      if (isNaN(lng) || isNaN(lat)) {
+        throw new Error(`无效的坐标值: ${poi.location}`);
+      }
+      
+      console.log(`POI搜索成功: ${address} (${city || '未指定城市'}, ${poiType || '默认类型'}) -> ${poi.name}, ${poi.location}`);
+      return {
+        location: [lng, lat],
+        foundPlace: poi.name,
+        foundAddress: poi.address || '',
+        foundLocation: poi.location,
+        originalPlace: address,
+        originalCity: city,
+        originalType: poiType
+      };
+    } else {
+      // 如果POI搜索没有找到，尝试使用地理编码作为备选方案
+      console.warn(`未找到POI (${poiType || '默认类型'})，尝试地理编码: ${address}`);
+      const geocodeResult = await this.fallbackGeocode(address, city);
+      return {
+        ...geocodeResult,
+        foundPlace: address,
+        foundAddress: '',
+        foundLocation: geocodeResult.location.join(','),
+        originalPlace: address,
+        originalCity: city,
+        originalType: poiType
+      };
+    }
+  }
+
+  // 地理编码服务（备选方案）
+  async fallbackGeocode(address, city = '') {
+    const cityParam = city ? `&city=${encodeURIComponent(city)}` : '';
+    const response = await fetch(`/amap/v3/geocode/geo?address=${encodeURIComponent(address)}${cityParam}&key=${this.serviceKey}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json'
@@ -138,7 +201,6 @@ class AMapService {
       const geocode = data.geocodes[0];
       const [lngStr, latStr] = geocode.location.split(',');
       
-      // 验证坐标格式有效性
       if (!lngStr || !latStr) {
         throw new Error(`无效的坐标格式: ${geocode.location}`);
       }
@@ -150,16 +212,159 @@ class AMapService {
         throw new Error(`无效的坐标值: ${geocode.location}`);
       }
       
+      console.log(`地理编码成功(备选): ${address} -> ${geocode.location}`);
       return {
         location: [lng, lat]
       };
     } else {
-      throw new Error(`地理编码失败: ${data.info || '未知错误'}`);
+      throw new Error(`POI搜索和地理编码均失败: ${data.info || '未知错误'}`);
+    }
+  }
+
+  // 验证地点一致性
+  async validatePlaces(geocodeResults, planText) {
+    if (geocodeResults.length === 0) return [];
+    
+    try {
+      const response = await fetch('/api/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Failover-Enabled': 'true',
+          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              'role': 'system',
+              'content': placeValidationPrompt
+            },
+            {
+              'role': 'user',
+              'content': JSON.stringify({
+                userPlan: planText,
+                results: geocodeResults.map(r => ({
+                  originalPlace: r.originalPlace,
+                  originalCity: r.originalCity,
+                  originalType: r.originalType,
+                  foundPlace: r.foundPlace,
+                  foundAddress: r.foundAddress,
+                  foundLocation: r.foundLocation
+                }))
+              })
+            }
+          ],
+          model: 'astron-code-latest',
+          stream: false,
+          max_completion_tokens: 1024,
+          temperature: 0.3,
+          top_p: 0.95,
+          frequency_penalty: 0
+        })
+      });
+
+      if (!response.ok) {
+        console.warn('地点验证请求失败，保留所有地点');
+        return geocodeResults;
+      }
+
+      const data = await response.json();
+      console.log('地点验证响应:', data);
+      
+      if (data.choices && data.choices.length > 0) {
+        let content = data.choices[0].message.content.trim();
+        try {
+          // 清理markdown代码块标记
+          if (content.startsWith('```json') || content.startsWith('```')) {
+            content = content.replace(/^```json\s*/, '').replace(/^```\s*/, '');
+          }
+          if (content.endsWith('```')) {
+            content = content.replace(/\s*```$/, '');
+          }
+          content = content.trim();
+          
+          console.log('清理后的验证响应:', content);
+          
+          // 尝试解析JSON响应
+          const validationResult = JSON.parse(content);
+          const keepIndices = validationResult.keep || [];
+          const removeIndices = validationResult.remove || [];
+          
+          console.log('验证结果 - 保留:', keepIndices, '删除:', removeIndices);
+          
+          // 返回验证通过的地点
+          return keepIndices.map(index => geocodeResults[index]).filter(Boolean);
+        } catch (parseError) {
+          console.warn('解析验证响应失败，保留所有地点:', parseError, '原始内容:', data.choices[0].message.content);
+          return geocodeResults;
+        }
+      }
+      return geocodeResults;
+    } catch (error) {
+      console.warn('地点验证失败，保留所有地点:', error);
+      return geocodeResults;
+    }
+  }
+
+  // 提取旅行计划中涉及的城市
+  async extractCities(planText) {
+    try {
+      const response = await fetch('/api/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Failover-Enabled': 'true',
+          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              'role': 'system',
+              'content': cityExtractionPrompt
+            },
+            {
+              'role': 'user',
+              'content': planText
+            }
+          ],
+          model: 'astron-code-latest',
+          stream: false,
+          max_completion_tokens: 512,
+          temperature: 0.3,
+          top_p: 0.95,
+          frequency_penalty: 0
+        })
+      });
+
+      if (!response.ok) {
+        console.warn('提取城市失败，继续执行');
+        return [];
+      }
+
+      const data = await response.json();
+      if (data.choices && data.choices.length > 0) {
+        const content = data.choices[0].message.content.trim();
+        try {
+          const result = JSON.parse(content);
+          console.log('提取到的城市:', result.cities);
+          return result.cities || [];
+        } catch (parseError) {
+          console.warn('解析城市响应失败:', parseError);
+          return [];
+        }
+      }
+      return [];
+    } catch (error) {
+      console.warn('提取城市失败，继续执行:', error);
+      return [];
     }
   }
 
   // 解析旅行计划中的地点
   async parseTravelPlan(planText) {
+    // 先提取旅行计划中涉及的城市
+    const cities = await this.extractCities(planText);
+    
     // 直接调用大模型智能提取地点
     try {
       // 使用fetch直接调用Vite代理
@@ -174,11 +379,11 @@ class AMapService {
           messages: [
             {
               'role': 'system',
-              'content': '你是一个地点提取和旅行路线规划专家，请从以下旅行计划中提取最重要的16个以内主要的，适合高德地图检索的地点（优先选择著名景点）并严格按旅行计划顺序进行排序。如地点不在中国大陆则翻译提取的地点和各项信息为当地的语言。\n\n要求：\n1. 每个地点一行\n2. 尽量包含完整的地点名称（如：故宫博物院、西湖风景名胜区）\n3. 每个地点前面附加所在城市，如不在中国大陆则要在前面附加国家或地区并使用当地的语言，如国家为美国就翻译成英语，例(USA San Francisco Golden Gate Bridge)，格式为：城市/国家/地区 地点名称，例（上海 东方明珠）。严格遵循上述格式\n4. 只提取真实存在的旅游景点\n5. 不要提取通用词汇（如：酒店、餐厅、市区）\n6. 确保地点名称准确，避免错别字\n\n输出格式示例：\n北京 故宫博物院\n杭州 西湖风景名胜区\n西安 兵马俑'
+              'content': placeExtractionPrompt
             },
             {
               'role': 'user',
-              'content': `旅行计划：${planText}\n\n请提取最重要的主要景点。`
+              'content': `涉及的城市：${cities.join('、')}旅行计划：${planText}\n\n请提取最重要的主要景点。`
             }
           ],
           model: 'astron-code-latest',
@@ -276,54 +481,68 @@ class AMapService {
         console.log('去重后的地点:', uniqueAIPlaces);
         console.log('限制后的地点:', limitedAIPlaces);
         
-        // 解析地点，提取纯地点名称（用于地理编码）和显示名称
+        // 解析地点，提取纯地点名称（用于地理编码）、城市和POI类型
         const parsedPlaces = limitedAIPlaces.map(fullPlace => {
           let displayName = fullPlace;
           let geocodeName = fullPlace;
           let city = '';
+          let poiType = '';
           
+          // 首先提取POI类型（如果有的话）
+          let placeWithoutType = fullPlace;
+          const typeMatch = fullPlace.match(/^(.+?)\|(.+)$/);
+          if (typeMatch) {
+            placeWithoutType = typeMatch[1].trim();
+            poiType = typeMatch[2].trim();
+            displayName = placeWithoutType; // 显示名称不需要包含类型
+            geocodeName = placeWithoutType;
+          }
+          
+          // 然后解析城市和地点名称
           // 首先尝试解析格式：城市 地点名称（空格分隔）
-          const spaceMatch = fullPlace.match(/^(\S+?)\s+(.+)$/);
+          const spaceMatch = placeWithoutType.match(/^(\S+?)\s+(.+)$/);
           if (spaceMatch) {
             city = spaceMatch[1].trim();
             geocodeName = spaceMatch[2].trim();
-            displayName = fullPlace;
-            console.log(`解析地点: ${fullPlace} -> 地点名称: ${geocodeName}, 城市: ${city}`);
+            displayName = geocodeName; // 显示名称只保留地点，不要城市
+            console.log(`解析地点: ${fullPlace} -> 地点名称: ${geocodeName}, 城市: ${city}, 类型: ${poiType}`);
           } else {
             // 如果没有空格分隔，尝试解析格式：地点名称（城市名）
-            const match = fullPlace.match(/^(.+?)[（(](.+?)[）)]$/);
+            const match = placeWithoutType.match(/^(.+?)[（(](.+?)[）)]$/);
             if (match) {
-              displayName = fullPlace;
               geocodeName = match[1].trim();
               city = match[2].trim();
-              console.log(`解析地点: ${fullPlace} -> 地点名称: ${geocodeName}, 城市: ${city}`);
+              displayName = geocodeName; // 显示名称只保留地点，不要城市
+              console.log(`解析地点: ${fullPlace} -> 地点名称: ${geocodeName}, 城市: ${city}, 类型: ${poiType}`);
             }
           }
           
           return {
             displayName: displayName,
             geocodeName: geocodeName,
-            city: city
+            city: city,
+            poiType: poiType
           };
         });
         
         console.log('解析后的地点列表:', parsedPlaces);
         
-        // 地理编码
-        const geocodedAIPlaces = [];
+        // 地理编码 - 收集完整信息用于验证
+        const rawGeocodeResults = [];
         for (let i = 0; i < parsedPlaces.length; i++) {
           const placeObj = parsedPlaces[i];
           const place = placeObj.geocodeName;
           const city = placeObj.city;
+          const poiType = placeObj.poiType;
           try {
             // 增加延迟，避免超过API调用限制（从300ms增加到600ms）
             await new Promise(resolve => setTimeout(resolve, i * 600));
-            const geocode = await this.geocode(place, city);
+            const geocode = await this.geocode(place, city, poiType);
             if (geocode && geocode.location) {
-              console.log(`地理编码成功: ${place} (${city || '未指定城市'}) -> ${geocode.location}`);
-              geocodedAIPlaces.push({
-                name: placeObj.displayName,
-                location: geocode.location
+              console.log(`地理编码成功: ${place} (${city || '未指定城市'}, ${poiType || '默认类型'}) -> ${geocode.location}`);
+              rawGeocodeResults.push({
+                ...geocode,
+                displayName: geocode.foundPlace || placeObj.displayName
               });
             } else {
               console.warn(`无法解析地点: ${place} - 地理编码返回null`);
@@ -334,12 +553,12 @@ class AMapService {
               // 尝试重试一次，增加更长的延迟（从2000ms增加到3000ms）
               await new Promise(resolve => setTimeout(resolve, 3000));
               try {
-                const geocode = await this.geocode(place, city);
+                const geocode = await this.geocode(place, city, poiType);
                 if (geocode && geocode.location) {
-                  console.log(`地理编码成功(重试): ${place} (${city || '未指定城市'}) -> ${geocode.location}`);
-                  geocodedAIPlaces.push({
-                    name: placeObj.displayName,
-                    location: geocode.location
+                  console.log(`地理编码成功(重试): ${place} (${city || '未指定城市'}, ${poiType || '默认类型'}) -> ${geocode.location}`);
+                  rawGeocodeResults.push({
+                    ...geocode,
+                    displayName: geocode.foundPlace || placeObj.displayName
                   });
                 }
               } catch (retryError) {
@@ -350,9 +569,18 @@ class AMapService {
             }
           }
         }
-        
-        const filteredPlaces = geocodedAIPlaces.filter(place => place !== null);
-        console.log('最终地理编码成功的地点:', filteredPlaces);
+
+        console.log('地理编码完成，开始验证地点一致性...');
+        const validatedResults = await this.validatePlaces(rawGeocodeResults, planText);
+        console.log('验证通过的地点:', validatedResults);
+
+        // 转换为最终格式
+        const filteredPlaces = validatedResults.map(result => ({
+          name: result.displayName,
+          location: result.location
+        })).filter(place => place !== null);
+
+        console.log('最终返回的地点:', filteredPlaces);
 
         if (filteredPlaces.length === 0) {
           console.warn('未找到任何可地理编码的有效地点');

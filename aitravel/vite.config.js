@@ -13,6 +13,11 @@ export default defineConfig({
         headers: {
           'X-Failover-Enabled': 'true'
         }
+      },
+      '/amap': {
+        target: 'https://restapi.amap.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/amap/, '')
       }
     }
   }
