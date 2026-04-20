@@ -1,5 +1,47 @@
 <script setup>
-// App.vue 只做布局和路由视图，不放业务逻辑
+import { ref, onMounted } from 'vue'
+import LoginModal from './components/LoginModal.vue'
+import { authService } from './utils/auth.js'
+
+// 用户登录状态
+const isLoggedIn = ref(false)
+const userInfo = ref(null)
+const showLoginModal = ref(false)
+
+// 检查登录状态
+onMounted(() => {
+  if (authService.isLoggedIn()) {
+    authService.getCurrentUser().then(result => {
+      if (result) {
+        userInfo.value = result.data
+        isLoggedIn.value = true
+      }
+    })
+  }
+})
+
+// 打开登录弹窗
+const openLoginModal = () => {
+  showLoginModal.value = true
+}
+
+// 关闭登录弹窗
+const closeLoginModal = () => {
+  showLoginModal.value = false
+}
+
+// 处理登录成功
+const handleLogin = (user) => {
+  userInfo.value = user
+  isLoggedIn.value = true
+}
+
+// 处理登出
+const handleLogout = () => {
+  authService.logout()
+  userInfo.value = null
+  isLoggedIn.value = false
+}
 </script>
 
 <template>
@@ -16,14 +58,30 @@
             <router-link to="/explore">探索</router-link>
           </li>
           <li>
-            <router-link to="/poi-experience">景点体验</router-link>
+            <router-link to="/poi-experience">足迹</router-link>
           </li>
           <li>
-            <a href="#">关于我们</a>
+            <router-link to="/travel-plan">旅行规划</router-link>
+          </li>
+          <li v-if="!isLoggedIn">
+            <a href="#" @click.prevent="openLoginModal">登录</a>
+          </li>
+          <li v-else class="user-menu">
+            <div class="user-info" @click="handleLogout">
+              <img :src="userInfo.avatar" alt="avatar" class="user-avatar" />
+              <span>{{ userInfo.nickname }}</span>
+            </div>
           </li>
         </ul>
       </nav>
     </header>
+
+    <!-- 登录弹窗 -->
+    <LoginModal
+      :show="showLoginModal"
+      @close="closeLoginModal"
+      @login="handleLogin"
+    />
 
     <!-- 主要内容 - 路由视图 -->
     <main class="main-content">
@@ -91,6 +149,33 @@
 .header nav router-link.active {
   background: rgba(255, 255, 255, 0.2);
   font-weight: 600;
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  transition: all 0.3s ease;
+}
+
+.user-info:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 .main-content {

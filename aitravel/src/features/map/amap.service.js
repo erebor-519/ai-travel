@@ -172,9 +172,6 @@ class AMapService {
       const geocodeResult = await this.fallbackGeocode(address, city);
       return {
         ...geocodeResult,
-        foundPlace: address,
-        foundAddress: '',
-        foundLocation: geocodeResult.location.join(','),
         originalPlace: address,
         originalCity: city,
         originalType: poiType
@@ -212,9 +209,12 @@ class AMapService {
         throw new Error(`无效的坐标值: ${geocode.location}`);
       }
       
-      console.log(`地理编码成功(备选): ${address} -> ${geocode.location}`);
+      console.log(`地理编码成功(备选): ${address} -> ${geocode.formatted_address}, ${geocode.location}`);
       return {
-        location: [lng, lat]
+        location: [lng, lat],
+        foundPlace: geocode.formatted_address || address,
+        foundAddress: geocode.formatted_address || '',
+        foundLocation: geocode.location
       };
     } else {
       throw new Error(`POI搜索和地理编码均失败: ${data.info || '未知错误'}`);
@@ -242,6 +242,7 @@ class AMapService {
             {
               'role': 'user',
               'content': JSON.stringify({
+                userOriginalInput: planText,
                 userPlan: planText,
                 results: geocodeResults.map(r => ({
                   originalPlace: r.originalPlace,
@@ -383,7 +384,7 @@ class AMapService {
             },
             {
               'role': 'user',
-              'content': `涉及的城市：${cities.join('、')}旅行计划：${planText}\n\n请提取最重要的主要景点。`
+              'content': `用户原始输入：${planText}\n\n涉及的城市：${cities.join('、')}\n\n请优先考虑用户原始输入，提取最重要的主要景点。`
             }
           ],
           model: 'astron-code-latest',
@@ -536,7 +537,7 @@ class AMapService {
           const poiType = placeObj.poiType;
           try {
             // 增加延迟，避免超过API调用限制（从300ms增加到600ms）
-            await new Promise(resolve => setTimeout(resolve, i * 600));
+            await new Promise(resolve => setTimeout(resolve, i * 200));
             const geocode = await this.geocode(place, city, poiType);
             if (geocode && geocode.location) {
               console.log(`地理编码成功: ${place} (${city || '未指定城市'}, ${poiType || '默认类型'}) -> ${geocode.location}`);
@@ -551,7 +552,7 @@ class AMapService {
             if (error.message.includes('CUQPS_HAS_EXCEEDED_THE_LIMIT')) {
               console.warn(`地点 ${place} 超过API调用限制，稍后重试`);
               // 尝试重试一次，增加更长的延迟（从2000ms增加到3000ms）
-              await new Promise(resolve => setTimeout(resolve, 3000));
+              await new Promise(resolve => setTimeout(resolve, 1000));
               try {
                 const geocode = await this.geocode(place, city, poiType);
                 if (geocode && geocode.location) {

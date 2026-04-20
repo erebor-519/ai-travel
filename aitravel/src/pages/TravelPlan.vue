@@ -3,9 +3,52 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import OpenAI from 'openai'
 import AMapService from '../features/map/amap.service.js'
+import regeneratePlanPrompt from '../features/map/regenerate-plan-prompt.md?raw'
+import LoginModal from '../components/LoginModal.vue'
+import { authService } from '../utils/auth.js'
 
 window._AMapSecurityConfig = {
   securityJsCode: '49b1e1860ca6fe3ce62911c2ce619345',
+}
+
+// 用户登录状态
+const isLoggedIn = ref(false)
+const userInfo = ref(null)
+const showLoginModal = ref(false)
+
+// 检查登录状态
+const checkLoginStatus = () => {
+  if (authService.isLoggedIn()) {
+    authService.getCurrentUser().then(result => {
+      if (result) {
+        userInfo.value = result.data
+        isLoggedIn.value = true
+      }
+    })
+  }
+}
+
+// 打开登录弹窗
+const openLoginModal = () => {
+  showLoginModal.value = true
+}
+
+// 关闭登录弹窗
+const closeLoginModal = () => {
+  showLoginModal.value = false
+}
+
+// 处理登录成功
+const handleLogin = (user) => {
+  userInfo.value = user
+  isLoggedIn.value = true
+}
+
+// 处理登出
+const handleLogout = () => {
+  authService.logout()
+  userInfo.value = null
+  isLoggedIn.value = false
 }
 
 const route = useRoute()
@@ -31,24 +74,24 @@ const client = new OpenAI({
 
 const analysis_system_prompt = `你是一个专业的旅行规划师，擅长根据用户需求生成详细的旅行计划。请按照以下格式输出：
 
-# 旅行计划标题
+旅行计划标题
 
-## 行程概览
-- 总天数：X天
-- 预算范围：XXX
-- 旅行主题：XXX
+行程概览
+总天数：X天
+预算范围：XXX
+旅行主题：XXX
 
-## 每日行程
+每日行程
 
-### Day 1
-- 上午：[活动内容] - [地点] - [时间]
-- 下午：[活动内容] - [地点] - [时间]
-- 晚上：[活动内容] - [地点] - [时间]
+Day 1
+上午：[活动内容] - [地点] - [时间]
+下午：[活动内容] - [地点] - [时间]
+晚上：[活动内容] - [地点] - [时间]
 
-### Day 2
+Day 2
 ...以此类推
 
-## 注意事项
+注意事项
 1. [注意事项1]
 2. [注意事项2]
 ...
@@ -104,8 +147,9 @@ const generateTravelPlan = async () => {
     })
 
     const content = response.choices[0].message.content.trim()
-    planResult.value = content
-    await generateRoutePlan()
+    // 暂时不显示原始旅行计划，等待重新生成
+    const tempPlan = content
+    await generateRoutePlan(tempPlan)
   } catch (error) {
     console.error('生成旅行计划失败:', error)
     if (error.response) {
@@ -123,8 +167,9 @@ const generateTravelPlan = async () => {
   }
 }
 
-const generateRoutePlan = async () => {
-  if (!planResult.value) {
+const generateRoutePlan = async (tempPlan) => {
+  const planToUse = tempPlan || planResult.value
+  if (!planToUse) {
     routeErrorMessage.value = '请先生成旅行计划'
     return
   }
@@ -133,13 +178,36 @@ const generateRoutePlan = async () => {
   routeErrorMessage.value = ''
 
   try {
-    const places = await amapService.parseTravelPlan(planResult.value)
+    const places = await amapService.parseTravelPlan(planToUse)
 
     if (places.length < 2) {
       console.log('提取的地点数量不足:', places.length, '地点:', places);
       routeErrorMessage.value = '无法从旅行计划中提取足够的地点，请确保计划中包含明确的地点信息'
       return
     }
+
+    // 使用筛选后的地点重新生成旅行计划
+    const placeNames = places.map(place => place.name).join('、')
+    const regeneratedPlan = await client.chat.completions.create({
+      messages: [
+        {
+          "role": "system",
+          "content": regeneratePlanPrompt
+        },
+        {
+          "role": "user",
+          "content": `用户原始输入：${travelInput.value}\n\n筛选后的地点：${placeNames}\n\n请优先考虑用户原始输入，根据这些地点重新生成详细的旅行计划。`
+        }
+      ],
+      model: "astron-code-latest",
+      stream: false,
+      max_completion_tokens: 2024,
+      temperature: 0.6,
+      top_p: 0.95,
+      frequency_penalty: 0
+    })
+
+    planResult.value = regeneratedPlan.choices[0].message.content.trim()
 
     showMap.value = true
     await showRouteOnMap(places)
@@ -232,7 +300,10 @@ onMounted(() => {
   document.body.style.overflow = 'hidden'
   document.body.style.height = '100vh'
   document.body.style.width = '100vw'
-  
+
+  // 检查登录状态
+  checkLoginStatus()
+
   if (route.query.input) {
     travelInput.value = decodeURIComponent(route.query.input)
     generateTravelPlan()
@@ -268,14 +339,30 @@ onUnmounted(() => {
             <router-link to="/explore">探索</router-link>
           </li>
           <li>
-            <router-link to="/poi-experience">景点体验</router-link>
+            <router-link to="/poi-experience">足迹</router-link>
           </li>
           <li>
-            <a href="#">关于我们</a>
+            <router-link to="/travel-plan">旅行规划</router-link>
+          </li>
+          <li v-if="!isLoggedIn">
+            <a href="#" @click.prevent="openLoginModal">登录</a>
+          </li>
+          <li v-else class="user-menu">
+            <div class="user-info" @click="handleLogout">
+              <img :src="userInfo.avatar" alt="avatar" class="user-avatar" />
+              <span>{{ userInfo.nickname }}</span>
+            </div>
           </li>
         </ul>
       </nav>
     </header>
+
+    <!-- 登录弹窗 -->
+    <LoginModal
+      :show="showLoginModal"
+      @close="closeLoginModal"
+      @login="handleLogin"
+    />
     
     <!-- 主要内容 -->
     <div class="content-wrapper">
@@ -394,6 +481,33 @@ onUnmounted(() => {
 .header nav router-link.active {
   background: rgba(255, 255, 255, 0.2);
   font-weight: 600;
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  transition: all 0.3s ease;
+}
+
+.user-info:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 .content-wrapper {
@@ -608,8 +722,8 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-wrap: break-word;
   color: var(--text-primary);
-  font-size: var(--font-size-xs);
-  line-height: 1.4;
+  font-size: 0.9rem;
+  line-height: 1.6;
 }
 
 .route-btn {

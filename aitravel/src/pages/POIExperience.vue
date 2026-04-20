@@ -1,160 +1,266 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { cloudbase } from '../utils/cloudbase'
 
-// 模拟景点体验数据
-const poiExperience = {
+// 景点体验数据
+const poiExperience = ref({
   id: 1,
-  name: '故宫深度游',
-  location: '北京',
-  description: '带你深入了解故宫的历史文化，探索不为人知的秘密角落，感受皇家宫殿的恢弘气势。',
-  images: [
-    'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Forbidden%20City%20palace%20halls%20ancient%20Chinese%20architecture%20detailed%20view&image_size=landscape_16_9',
-    'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Forbidden%20City%20imperial%20gardens%20traditional%20Chinese%20landscape&image_size=landscape_16_9',
-    'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Forbidden%20City%20cultural%20relics%20antiques%20exhibition&image_size=landscape_16_9'
-  ],
-  duration: '4小时',
-  price: '¥298/人',
-  rating: 4.9,
-  reviews: 1256,
-  included: [
-    '专业导游讲解',
-    '故宫深度游路线',
-    '特色午餐',
-    '文化纪念品'
-  ],
-  highlights: [
-    '参观珍宝馆，欣赏皇家珍藏',
-    '探索故宫未开放区域',
-    '了解皇家生活礼仪',
-    '学习传统建筑知识'
-  ],
-  reviewsList: [
-    {
-      id: 1,
-      user: '张三',
-      avatar: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=asian%20male%20traveler%20portrait&image_size=square',
-      rating: 5,
-      comment: '导游讲解非常专业，学到了很多历史知识，故宫真的很震撼！',
-      date: '2026-01-20'
-    },
-    {
-      id: 2,
-      user: '李四',
-      avatar: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=asian%20female%20traveler%20portrait&image_size=square',
-      rating: 4,
-      comment: '体验很棒，就是人有点多，建议早点去。',
-      date: '2026-01-18'
-    }
-  ]
-}
+  name: '',
+  location: '',
+  description: '',
+  images: [],
+  duration: '',
+  price: '',
+  rating: 0,
+  reviews: 0,
+  included: [],
+  highlights: [],
+  reviewsList: []
+})
 
 const currentImageIndex = ref(0)
+const isLoading = ref(true)
+const errorMessage = ref('')
+
+// 获取景点体验数据
+const fetchPOIExperience = async () => {
+  isLoading.value = true
+  errorMessage.value = ''
+  
+  try {
+    // 查询 poi_experiences 集合 (MongoDB 文档数据库)
+    const db = cloudbase.database()
+    const result = await db.collection('poi_experiences')
+      .limit(1)
+      .get()
+    
+    if (result && result.data && result.data.length > 0) {
+      poiExperience.value = result.data[0]
+    } else {
+      // 如果没有数据，使用默认数据
+      poiExperience.value = {
+        id: 1,
+        name: '故宫深度游',
+        location: '北京',
+        description: '带你深入了解故宫的历史文化，探索不为人知的秘密角落，感受皇家宫殿的恢弘气势。',
+        images: [
+          'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Forbidden%20City%20palace%20halls%20ancient%20Chinese%20architecture%20detailed%20view&image_size=landscape_16_9',
+          'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Forbidden%20City%20imperial%20gardens%20traditional%20Chinese%20landscape&image_size=landscape_16_9',
+          'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Forbidden%20City%20cultural%20relics%20antiques%20exhibition&image_size=landscape_16_9'
+        ],
+        duration: '4小时',
+        price: '¥298/人',
+        rating: 4.9,
+        reviews: 1256,
+        included: [
+          '专业导游讲解',
+          '故宫深度游路线',
+          '特色午餐',
+          '文化纪念品'
+        ],
+        highlights: [
+          '参观珍宝馆，欣赏皇家珍藏',
+          '探索故宫未开放区域',
+          '了解皇家生活礼仪',
+          '学习传统建筑知识'
+        ],
+        reviewsList: [
+          {
+            id: 1,
+            user: '张三',
+            avatar: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=asian%20male%20traveler%20portrait&image_size=square',
+            rating: 5,
+            comment: '导游讲解非常专业，学到了很多历史知识，故宫真的很震撼！',
+            date: '2026-01-20'
+          },
+          {
+            id: 2,
+            user: '李四',
+            avatar: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=asian%20female%20traveler%20portrait&image_size=square',
+            rating: 4,
+            comment: '体验很棒，就是人有点多，建议早点去。',
+            date: '2026-01-18'
+          }
+        ]
+      }
+    }
+  } catch (error) {
+    console.error('获取景点体验数据失败:', error)
+    errorMessage.value = '获取数据失败，请稍后重试'
+    // 使用默认数据
+    poiExperience.value = {
+      id: 1,
+      name: '故宫深度游',
+      location: '北京',
+      description: '带你深入了解故宫的历史文化，探索不为人知的秘密角落，感受皇家宫殿的恢弘气势。',
+      images: [
+        'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Forbidden%20City%20palace%20halls%20ancient%20Chinese%20architecture%20detailed%20view&image_size=landscape_16_9',
+        'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Forbidden%20City%20imperial%20gardens%20traditional%20Chinese%20landscape&image_size=landscape_16_9',
+        'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Forbidden%20City%20cultural%20relics%20antiques%20exhibition&image_size=landscape_16_9'
+      ],
+      duration: '4小时',
+      price: '¥298/人',
+      rating: 4.9,
+      reviews: 1256,
+      included: [
+        '专业导游讲解',
+        '故宫深度游路线',
+        '特色午餐',
+        '文化纪念品'
+      ],
+      highlights: [
+        '参观珍宝馆，欣赏皇家珍藏',
+        '探索故宫未开放区域',
+        '了解皇家生活礼仪',
+        '学习传统建筑知识'
+      ],
+      reviewsList: [
+        {
+          id: 1,
+          user: '张三',
+          avatar: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=asian%20male%20traveler%20portrait&image_size=square',
+          rating: 5,
+          comment: '导游讲解非常专业，学到了很多历史知识，故宫真的很震撼！',
+          date: '2026-01-20'
+        },
+        {
+          id: 2,
+          user: '李四',
+          avatar: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=asian%20female%20traveler%20portrait&image_size=square',
+          rating: 4,
+          comment: '体验很棒，就是人有点多，建议早点去。',
+          date: '2026-01-18'
+        }
+      ]
+    }
+  } finally {
+    isLoading.value = false
+  }
+}
 
 const nextImage = () => {
-  currentImageIndex.value = (currentImageIndex.value + 1) % poiExperience.images.length
+  currentImageIndex.value = (currentImageIndex.value + 1) % poiExperience.value.images.length
 }
 
 const prevImage = () => {
-  currentImageIndex.value = (currentImageIndex.value - 1 + poiExperience.images.length) % poiExperience.images.length
+  currentImageIndex.value = (currentImageIndex.value - 1 + poiExperience.value.images.length) % poiExperience.value.images.length
 }
 
 const handleBooking = () => {
-  // 这里可以添加预订逻辑
   alert('预订功能开发中...')
 }
+
+onMounted(() => {
+  fetchPOIExperience()
+})
 </script>
 
 <template>
   <div class="poi-experience-page">
-    <div class="poi-header">
-      <h1>{{ poiExperience.name }}</h1>
-      <div class="poi-meta">
-        <span class="location">{{ poiExperience.location }}</span>
-        <span class="duration">{{ poiExperience.duration }}</span>
-        <span class="rating">
-          ⭐ {{ poiExperience.rating }} ({{ poiExperience.reviews }}条评价)
-        </span>
-      </div>
+    <!-- 加载状态 -->
+    <div v-if="isLoading" class="loading-container">
+      <div class="loading-spinner"></div>
+      <p>正在加载景点信息...</p>
     </div>
 
-    <div class="poi-content">
-      <!-- 左侧图片展示 -->
-      <div class="poi-images">
-        <div class="main-image">
-          <img :src="poiExperience.images[currentImageIndex]" :alt="poiExperience.name" />
-          <button class="image-nav prev" @click="prevImage">‹</button>
-          <button class="image-nav next" @click="nextImage">›</button>
+    <!-- 错误提示 -->
+    <div v-else-if="errorMessage" class="error-container">
+      <p>{{ errorMessage }}</p>
+      <button @click="fetchPOIExperience" class="retry-btn">重试</button>
+    </div>
+
+    <!-- 内容展示 -->
+    <template v-else>
+      <div class="poi-header">
+        <h1>{{ poiExperience.name }}</h1>
+        <div class="poi-meta">
+          <span class="location">{{ poiExperience.location }}</span>
+          <span class="duration">{{ poiExperience.duration }}</span>
+          <span class="rating">
+            ⭐ {{ poiExperience.rating }} ({{ poiExperience.reviews }}条评价)
+          </span>
         </div>
-        <div class="thumbnails">
-          <div 
-            v-for="(image, index) in poiExperience.images" 
-            :key="index"
-            class="thumbnail"
-            :class="{ active: index === currentImageIndex }"
-            @click="currentImageIndex = index"
-          >
-            <img :src="image" :alt="`${poiExperience.name} ${index + 1}`" />
+      </div>
+
+      <div class="poi-content">
+        <!-- 左侧图片展示 -->
+        <div class="poi-images">
+          <div class="main-image">
+            <img :src="poiExperience.images[currentImageIndex]" :alt="poiExperience.name" />
+            <button class="image-nav prev" @click="prevImage">‹</button>
+            <button class="image-nav next" @click="nextImage">›</button>
           </div>
-        </div>
-      </div>
-
-      <!-- 右侧信息 -->
-      <div class="poi-info">
-        <div class="poi-description">
-          <h2>体验介绍</h2>
-          <p>{{ poiExperience.description }}</p>
-        </div>
-
-        <div class="poi-details">
-          <h3>行程包含</h3>
-          <ul class="included-list">
-            <li v-for="(item, index) in poiExperience.included" :key="index">
-              ✅ {{ item }}
-            </li>
-          </ul>
-        </div>
-
-        <div class="poi-highlights">
-          <h3>体验亮点</h3>
-          <ul class="highlights-list">
-            <li v-for="(highlight, index) in poiExperience.highlights" :key="index">
-              ⭐ {{ highlight }}
-            </li>
-          </ul>
-        </div>
-
-        <div class="poi-booking">
-          <div class="price">{{ poiExperience.price }}</div>
-          <button class="book-btn" @click="handleBooking">立即预订</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 评价区域 -->
-    <div class="reviews-section">
-      <h2>用户评价</h2>
-      <div class="reviews-list">
-        <div 
-          v-for="review in poiExperience.reviewsList" 
-          :key="review.id"
-          class="review-card"
-        >
-          <div class="review-header">
-            <img :src="review.avatar" :alt="review.user" class="user-avatar" />
-            <div class="review-meta">
-              <h4>{{ review.user }}</h4>
-              <div class="review-rating">
-                <span v-for="i in 5" :key="i" class="star">
-                  {{ i <= review.rating ? '★' : '☆' }}
-                </span>
-              </div>
-              <span class="review-date">{{ review.date }}</span>
+          <div class="thumbnails">
+            <div 
+              v-for="(image, index) in poiExperience.images" 
+              :key="index"
+              class="thumbnail"
+              :class="{ active: index === currentImageIndex }"
+              @click="currentImageIndex = index"
+            >
+              <img :src="image" :alt="`${poiExperience.name} ${index + 1}`" />
             </div>
           </div>
-          <p class="review-comment">{{ review.comment }}</p>
+        </div>
+
+        <!-- 右侧信息 -->
+        <div class="poi-info">
+          <div class="poi-description">
+            <h2>体验介绍</h2>
+            <p>{{ poiExperience.description }}</p>
+          </div>
+
+          <div class="poi-details">
+            <h3>行程包含</h3>
+            <ul class="included-list">
+              <li v-for="(item, index) in poiExperience.included" :key="index">
+                ✅ {{ item }}
+              </li>
+            </ul>
+          </div>
+
+          <div class="poi-highlights">
+            <h3>体验亮点</h3>
+            <ul class="highlights-list">
+              <li v-for="(highlight, index) in poiExperience.highlights" :key="index">
+                ⭐ {{ highlight }}
+              </li>
+            </ul>
+          </div>
+
+          <div class="poi-booking">
+            <div class="price">{{ poiExperience.price }}</div>
+            <button class="book-btn" @click="handleBooking">立即预订</button>
+          </div>
         </div>
       </div>
-    </div>
+
+      <!-- 评价区域 -->
+      <div class="reviews-section">
+        <h2>用户评价</h2>
+        <div class="reviews-list">
+          <div 
+            v-for="review in poiExperience.reviewsList" 
+            :key="review.id"
+            class="review-card"
+          >
+            <div class="review-header">
+              <img :src="review.avatar" :alt="review.user" class="user-avatar" />
+              <div class="review-meta">
+                <h4>{{ review.user }}</h4>
+                <div class="review-rating">
+                  <span v-for="i in 5" :key="i" class="star">
+                    {{ i <= review.rating ? '★' : '☆' }}
+                  </span>
+                </div>
+                <span class="review-date">{{ review.date }}</span>
+              </div>
+            </div>
+            <p class="review-comment">{{ review.comment }}</p>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -164,6 +270,51 @@ const handleBooking = () => {
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
+}
+
+.loading-container,
+.error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: var(--spacing-lg);
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid var(--border-light);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-container p {
+  color: var(--error-color);
+  font-size: var(--font-size-lg);
+}
+
+.retry-btn {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-size-base);
+  transition: background 0.3s ease;
+}
+
+.retry-btn:hover {
+  background: var(--primary-hover);
 }
 
 .poi-header {
