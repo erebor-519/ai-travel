@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import LoginModal from './components/LoginModal.vue'
-import { authService } from './utils/auth.js'
 
 // 用户登录状态
 const isLoggedIn = ref(false)
@@ -10,14 +9,32 @@ const showLoginModal = ref(false)
 
 // 检查登录状态
 onMounted(() => {
-  if (authService.isLoggedIn()) {
-    authService.getCurrentUser().then(result => {
-      if (result) {
-        userInfo.value = result.data
-        isLoggedIn.value = true
-      }
-    })
+  const storedUserInfo = localStorage.getItem('userInfo')
+  if (storedUserInfo) {
+    userInfo.value = JSON.parse(storedUserInfo)
+    isLoggedIn.value = true
   }
+  
+  // 定期检查登录状态
+  setInterval(() => {
+    const storedUserInfo = localStorage.getItem('userInfo')
+    const storedUserId = localStorage.getItem('userId')
+    
+    if (storedUserInfo && storedUserId) {
+      try {
+        const parsed = JSON.parse(storedUserInfo)
+        if (!isLoggedIn.value || (userInfo.value && userInfo.value.userId !== parsed.userId)) {
+          userInfo.value = parsed
+          isLoggedIn.value = true
+        }
+      } catch (err) {
+        console.error('定期检查失败:', err)
+      }
+    } else if (isLoggedIn.value) {
+      isLoggedIn.value = false
+      userInfo.value = null
+    }
+  }, 1000)
 })
 
 // 打开登录弹窗
@@ -34,13 +51,6 @@ const closeLoginModal = () => {
 const handleLogin = (user) => {
   userInfo.value = user
   isLoggedIn.value = true
-}
-
-// 处理登出
-const handleLogout = () => {
-  authService.logout()
-  userInfo.value = null
-  isLoggedIn.value = false
 }
 </script>
 
@@ -61,16 +71,16 @@ const handleLogout = () => {
             <router-link to="/poi-experience">足迹</router-link>
           </li>
           <li>
-            <router-link to="/travel-plan">旅行规划</router-link>
+            <router-link to="/travel-plan">规划</router-link>
           </li>
           <li v-if="!isLoggedIn">
             <a href="#" @click.prevent="openLoginModal">登录</a>
           </li>
           <li v-else class="user-menu">
-            <div class="user-info" @click="handleLogout">
+            <router-link to="/profile" class="user-info">
               <img :src="userInfo.avatar" alt="avatar" class="user-avatar" />
               <span>{{ userInfo.nickname }}</span>
-            </div>
+            </router-link>
           </li>
         </ul>
       </nav>
@@ -154,6 +164,7 @@ const handleLogout = () => {
 .user-menu {
   display: flex;
   align-items: center;
+  position: relative;
 }
 
 .user-info {
@@ -168,6 +179,57 @@ const handleLogout = () => {
 
 .user-info:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-arrow {
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+.user-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  min-width: 160px;
+  overflow: hidden;
+  z-index: 1000;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.3s ease;
+  font-size: var(--font-size-sm);
+}
+
+.dropdown-item:hover {
+  background: var(--bg-secondary);
+}
+
+.dropdown-icon {
+  font-size: 16px;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 0;
+}
+
+.logout-item {
+  color: var(--error-color);
+}
+
+.logout-item:hover {
+  background: rgba(231, 76, 60, 0.1);
 }
 
 .user-avatar {

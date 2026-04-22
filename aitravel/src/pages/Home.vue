@@ -21,9 +21,15 @@ const handleMapError = (error) => {
 const destinations = [
   { name: '北京', description: '历史文化名城', icon: '🏛️' },
   { name: '上海', description: '现代都市风情', icon: '🌆' },
-  { name: '成都', description: '美食休闲之都', icon: '🍲' },
-  { name: '杭州', description: '人间天堂', icon: '西湖' }
+  { name: '成都', description: '美食休闲之都', icon: '🍲' }
 ]
+
+const handleDestinationClick = (dest) => {
+  router.push({ 
+    name: 'Explore', 
+    query: { q: encodeURIComponent(dest.name) } 
+  })
+}
 
 const handleGeneratePlan = () => {
   if (travelInput.value.trim()) {
@@ -62,10 +68,10 @@ const handleGeneratePlan = () => {
       <section class="ai-section">
         <h2>AI 旅行推荐</h2>
         <div class="ai-card">
-          <h3>智能目的地推荐</h3>
-          <p>基于您的偏好，我们为您推荐以下旅行目的地：</p>
+          <h3>目的地推荐</h3>
+
           <ul class="destination-list">
-            <li v-for="(dest, index) in destinations" :key="index" class="destination-item">
+            <li v-for="(dest, index) in destinations" :key="index" class="destination-item" @click="handleDestinationClick(dest)">
               <span class="destination-icon">{{ dest.icon }}</span>
               <div class="destination-info">
                 <h4>{{ dest.name }}</h4>
@@ -77,7 +83,7 @@ const handleGeneratePlan = () => {
         
         <div class="ai-card">
           <h3>旅行规划助手</h3>
-          <p>输入您的旅行需求，AI 将为您生成个性化旅行计划</p>
+          <p>输入您的旅行需求，生成个性化旅行计划</p>
           <input 
             v-model="travelInput"
             type="text" 
@@ -174,6 +180,7 @@ const handleGeneratePlan = () => {
   border-radius: var(--radius-md);
   margin-bottom: var(--spacing-md);
   transition: all 0.3s ease;
+  cursor: pointer;
 }
 
 .destination-item:hover {

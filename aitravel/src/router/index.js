@@ -5,6 +5,7 @@ const Home = () => import('../pages/Home.vue')
 const Explore = () => import('../pages/Explore.vue')
 const POIExperience = () => import('../pages/POIExperience.vue')
 const TravelPlan = () => import('../pages/TravelPlan.vue')
+const Profile = () => import('../pages/Profile.vue')
 
 const routes = [
   {
@@ -37,6 +38,14 @@ const routes = [
     component: TravelPlan,
     meta: {
       title: 'AI 智能旅行助手 - 旅行计划'
+    }
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: Profile,
+    meta: {
+      title: 'AI 智能旅行助手 - 用户主页'
     }
   },
   // 404页面

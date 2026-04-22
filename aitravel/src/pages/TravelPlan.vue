@@ -1,11 +1,10 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import OpenAI from 'openai'
 import AMapService from '../features/map/amap.service.js'
 import regeneratePlanPrompt from '../features/map/regenerate-plan-prompt.md?raw'
 import LoginModal from '../components/LoginModal.vue'
-import { authService } from '../utils/auth.js'
 
 window._AMapSecurityConfig = {
   securityJsCode: '49b1e1860ca6fe3ce62911c2ce619345',
@@ -18,13 +17,10 @@ const showLoginModal = ref(false)
 
 // 检查登录状态
 const checkLoginStatus = () => {
-  if (authService.isLoggedIn()) {
-    authService.getCurrentUser().then(result => {
-      if (result) {
-        userInfo.value = result.data
-        isLoggedIn.value = true
-      }
-    })
+  const storedUserInfo = localStorage.getItem('userInfo')
+  if (storedUserInfo) {
+    userInfo.value = JSON.parse(storedUserInfo)
+    isLoggedIn.value = true
   }
 }
 
@@ -46,7 +42,7 @@ const handleLogin = (user) => {
 
 // 处理登出
 const handleLogout = () => {
-  authService.logout()
+  localStorage.removeItem('userInfo')
   userInfo.value = null
   isLoggedIn.value = false
 }
@@ -62,6 +58,8 @@ const showMap = ref(true)
 const leftPanelCollapsed = ref(false)
 let originalBodyStyle = ''
 let currentDragRoute = null
+let abortController = null
+let isCancelled = false  // 全局取消标志
 
 const amapService = AMapService
 
@@ -108,6 +106,10 @@ const generateTravelPlan = async () => {
   errorMessage.value = ''
   planResult.value = ''
   showMap.value = false
+  isCancelled = false  // 重置取消标志
+  
+  // 创建 AbortController 用于取消请求
+  abortController = new AbortController()
   
   if (currentDragRoute) {
     try {
@@ -143,7 +145,8 @@ const generateTravelPlan = async () => {
       max_completion_tokens: 2024,
       temperature: 0.6,
       top_p: 0.95,
-      frequency_penalty: 0
+      frequency_penalty: 0,
+      signal: abortController.signal
     })
 
     const content = response.choices[0].message.content.trim()
@@ -151,6 +154,11 @@ const generateTravelPlan = async () => {
     const tempPlan = content
     await generateRoutePlan(tempPlan)
   } catch (error) {
+    // 检查是否是用户取消的请求
+    if (isCancelled || error.name === 'AbortError' || error.cmessage?.includes('aborted')) {
+      console.log('操作已取消')
+      return
+    }
     console.error('生成旅行计划失败:', error)
     if (error.response) {
       console.error('API响应错误:', error.response.status, error.response.data)
@@ -168,6 +176,9 @@ const generateTravelPlan = async () => {
 }
 
 const generateRoutePlan = async (tempPlan) => {
+  // 检查是否已取消
+  if (isCancelled) return
+  
   const planToUse = tempPlan || planResult.value
   if (!planToUse) {
     routeErrorMessage.value = '请先生成旅行计划'
@@ -178,13 +189,22 @@ const generateRoutePlan = async (tempPlan) => {
   routeErrorMessage.value = ''
 
   try {
+    // 检查是否已取消
+    if (isCancelled) return
+    
     const places = await amapService.parseTravelPlan(planToUse)
+    
+    // 检查是否已取消
+    if (isCancelled) return
 
     if (places.length < 2) {
       console.log('提取的地点数量不足:', places.length, '地点:', places);
       routeErrorMessage.value = '无法从旅行计划中提取足够的地点，请确保计划中包含明确的地点信息'
       return
     }
+
+    // 检查是否已取消
+    if (isCancelled) return
 
     // 使用筛选后的地点重新生成旅行计划
     const placeNames = places.map(place => place.name).join('、')
@@ -204,14 +224,23 @@ const generateRoutePlan = async (tempPlan) => {
       max_completion_tokens: 2024,
       temperature: 0.6,
       top_p: 0.95,
-      frequency_penalty: 0
+      frequency_penalty: 0,
+      signal: abortController.signal
     })
+    
+    // 检查是否已取消
+    if (isCancelled) return
 
     planResult.value = regeneratedPlan.choices[0].message.content.trim()
 
     showMap.value = true
     await showRouteOnMap(places)
   } catch (error) {
+    // 检查是否是用户取消的请求
+    if (isCancelled || error.name === 'AbortError' || error.cmessage?.includes('aborted')) {
+      console.log('操作已取消')
+      return
+    }
     console.error('生成路径规划失败:', error)
     if (error.response) {
       console.error('API响应错误:', error.response.status, error.response.data)
@@ -224,12 +253,20 @@ const generateRoutePlan = async (tempPlan) => {
       routeErrorMessage.value = `请求设置错误: ${error.message}`
     }
   } finally {
-    isRouteLoading.value = false
+    if (!isCancelled) {
+      isRouteLoading.value = false
+    }
   }
 }
 
 const showRouteOnMap = async (places) => {
+  // 检查是否已取消
+  if (isCancelled) return
+  
   await new Promise(resolve => setTimeout(resolve, 200))
+  
+  // 检查是否已取消
+  if (isCancelled) return
 
   const mapContainer = document.getElementById('container')
   if (!mapContainer) {
@@ -237,6 +274,9 @@ const showRouteOnMap = async (places) => {
   }
 
   await amapService.loadSDK()
+  
+  // 检查是否已取消
+  if (isCancelled) return
 
   const path = places.map(place => place.location)
 
@@ -249,12 +289,24 @@ const showRouteOnMap = async (places) => {
     console.warn('销毁旧地图失败:', error)
   }
   
+  // 检查是否已取消
+  if (isCancelled) return
+  
   const map = new window.AMap.Map("container", {
     resizeEnable: true
   })
   window.currentMap = map
+  
+  // 检查是否已取消
+  if (isCancelled) {
+    try { map.destroy() } catch (e) {}
+    return
+  }
 
   window.AMap.plugin("AMap.DragRoute", function() {
+    // 检查是否已取消
+    if (isCancelled) return
+    
     currentDragRoute = new window.AMap.DragRoute(map, path, window.AMap.DrivingPolicy.LEAST_FEE)
     currentDragRoute.search()
     
@@ -311,7 +363,16 @@ onMounted(() => {
   initMap()
 })
 
-onUnmounted(() => {
+onBeforeUnmount(() => {
+  // 设置取消标志，停止所有操作
+  isCancelled = true
+  
+  // 取消正在进行的 API 请求
+  if (abortController) {
+    abortController.abort()
+    abortController = null
+  }
+  
   document.body.style.cssText = originalBodyStyle
   
   if (window.currentMap) {
@@ -384,7 +445,7 @@ onUnmounted(() => {
               @click="generateTravelPlan"
               :disabled="isLoading"
             >
-              {{ isLoading ? '生成中...' : '生成计划' }}
+              {{ isLoading ? '生成中...（预计约1分钟）' : '生成计划' }}
             </button>
           </div>
           

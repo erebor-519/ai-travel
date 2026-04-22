@@ -1,5 +1,29 @@
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import OpenAI from 'openai'
+import { forumService } from '../utils/forum.js'
+
+const router = useRouter()
+
+// AI 客户端配置
+const client = new OpenAI({
+  baseURL: window.location.origin + '/api',
+  apiKey: 'b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm',
+  defaultHeaders: { 'X-Failover-Enabled': 'true' },
+  dangerouslyAllowBrowser: true
+})
+
+// AI 对话系统提示
+const ai_system_prompt = `你是一个热情的旅行助手，热爱分享旅行经验。请用简洁友好的语言介绍用户搜索的目的地。
+
+要求：
+1. 介绍目的地的特色、历史文化、必玩项目
+2. 推荐最佳游览季节和时间
+3. 推荐当地美食和特色体验
+4. 语言亲切自然，像朋友聊天
+5. 适当使用 emoji 增添趣味性
+6. 内容控制在150字以内`
 
 const popularDestinations = [
   {
@@ -37,10 +61,110 @@ const popularDestinations = [
 ]
 
 const searchQuery = ref('')
+const isSearching = ref(false)
+const aiReply = ref('')
+const searchResults = ref([])
+const relatedPosts = ref([])
+const searchError = ref('')
 
-const handleSearch = () => {
-  // 这里可以添加搜索逻辑
-  console.log('搜索:', searchQuery.value)
+// 目的地详情弹窗
+const showDestinationModal = ref(false)
+const currentDestination = ref(null)
+const destinationIntro = ref('')
+const isLoadingIntro = ref(false)
+
+const handleSearch = async () => {
+  if (!searchQuery.value.trim()) {
+    alert('请输入搜索内容')
+    return
+  }
+  
+  isSearching.value = true
+  aiReply.value = ''
+  searchResults.value = []
+  relatedPosts.value = []
+  searchError.value = ''
+  
+  try {
+    // 1. 调用 AI 获取目的地介绍
+    const aiResponse = await client.chat.completions.create({
+      messages: [
+        { "role": "system", "content": ai_system_prompt },
+        { "role": "user", "content": `请介绍一下「${searchQuery.value}」这个旅行目的地` }
+      ],
+      model: "astron-code-latest",
+      stream: false,
+      max_completion_tokens: 300,
+      temperature: 0.7
+    })
+    aiReply.value = aiResponse.choices[0].message.content.trim()
+    
+    // 2. 搜索相关帖子
+    const result = await forumService.searchPosts(searchQuery.value, 1, 10)
+    if (result.success) {
+      relatedPosts.value = result.data.posts || []
+    }
+    
+    // 3. 筛选匹配的景点卡片
+    const query = searchQuery.value.toLowerCase()
+    searchResults.value = popularDestinations.filter(dest => 
+      dest.name.toLowerCase().includes(query) ||
+      dest.location.toLowerCase().includes(query) ||
+      dest.description.toLowerCase().includes(query)
+    )
+    
+  } catch (error) {
+    console.error('搜索失败:', error)
+    searchError.value = '搜索失败，请稍后重试'
+  } finally {
+    isSearching.value = false
+  }
+}
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  aiReply.value = ''
+  searchResults.value = []
+  relatedPosts.value = []
+}
+
+const goToPost = (post) => {
+  // 跳转到足迹页面并带上搜索关键词
+  const keyword = encodeURIComponent(searchQuery.value || post.title || '')
+  router.push(`/poi-experience?search=${keyword}`)
+}
+
+// 查看目的地详情
+const viewDestination = async (destination) => {
+  currentDestination.value = destination
+  showDestinationModal.value = true
+  isLoadingIntro.value = true
+  destinationIntro.value = ''
+  
+  try {
+    const response = await client.chat.completions.create({
+      messages: [
+        { "role": "system", "content": ai_system_prompt },
+        { "role": "user", "content": `请介绍一下「${destination.name}」（位于${destination.location}）这个旅行目的地` }
+      ],
+      model: "astron-code-latest",
+      stream: false,
+      max_completion_tokens: 300,
+      temperature: 0.7
+    })
+    destinationIntro.value = response.choices[0].message.content.trim()
+  } catch (error) {
+    console.error('生成介绍失败:', error)
+    destinationIntro.value = '抱歉，暂时无法获取详细介绍，请稍后重试。'
+  } finally {
+    isLoadingIntro.value = false
+  }
+}
+
+const closeDestinationModal = () => {
+  showDestinationModal.value = false
+  currentDestination.value = null
+  destinationIntro.value = ''
 }
 </script>
 
@@ -49,37 +173,130 @@ const handleSearch = () => {
     <div class="explore-header">
       <h1>探索目的地</h1>
       <div class="search-bar">
-        <input 
-          type="text" 
-          v-model="searchQuery" 
-          placeholder="搜索景点、城市或体验" 
-          class="search-input"
-        />
-        <button class="search-btn" @click="handleSearch">搜索</button>
+        <div class="search-input-wrapper">
+          <input 
+            type="text" 
+            v-model="searchQuery" 
+            placeholder="搜索景点、城市或体验" 
+            class="search-input"
+            @keyup.enter="handleSearch"
+          />
+          <button v-if="searchQuery" class="clear-btn" @click="clearSearch">×</button>
+        </div>
+        <button class="search-btn" @click="handleSearch" :disabled="isSearching">
+          {{ isSearching ? '搜索中...' : '搜索' }}
+        </button>
       </div>
     </div>
 
-    <div class="destinations-grid">
-      <div 
-        v-for="destination in popularDestinations" 
-        :key="destination.id"
-        class="destination-card"
-      >
-        <div class="destination-image">
-          <img :src="destination.image" :alt="destination.name" />
-          <div class="destination-rating">
-            <span class="rating-star">⭐</span>
-            <span>{{ destination.rating }}</span>
+    <!-- AI 搜索结果区域 -->
+    <div v-if="isSearching" class="ai-loading">
+      <div class="loading-spinner"></div>
+      <span>正在获取 AI 推荐...</span>
+    </div>
+
+    <div v-if="searchError" class="error-message">
+      {{ searchError }}
+    </div>
+
+    <!-- AI 介绍 -->
+    <div v-if="aiReply" class="ai-result">
+      <div class="ai-result-header">
+        <span class="ai-badge">🤖 AI 助手</span>
+        <span>关于「{{ searchQuery }}」的介绍</span>
+      </div>
+      
+      <div class="ai-reply">
+        {{ aiReply }}
+      </div>
+    </div>
+
+    <!-- 搜索结果统计 -->
+    <div v-if="searchResults.length > 0 || relatedPosts.length > 0" class="search-summary">
+      <span v-if="searchResults.length > 0">找到 {{ searchResults.length }} 个相关目的地</span>
+      <span v-if="relatedPosts.length > 0">，{{ relatedPosts.length }} 篇相关帖子</span>
+    </div>
+
+    <!-- 相关帖子列表 -->
+    <div v-if="relatedPosts.length > 0" class="related-posts-section">
+      <h2>📝 相关旅行帖子</h2>
+      <div class="posts-list">
+        <div v-for="post in relatedPosts" :key="post._id" class="post-card" @click="goToPost(post)">
+          <div class="post-header">
+            <div class="user-avatar-small">
+              {{ (post.userInfo?.nickname || '匿名')[0] }}
+            </div>
+            <span class="post-author">{{ post.userInfo?.nickname || '匿名用户' }}</span>
+            <span class="post-time">{{ new Date(post.createdAt).toLocaleDateString() }}</span>
+          </div>
+          <h3 class="post-title">{{ post.title }}</h3>
+          <p class="post-content">{{ post.content?.substring(0, 100) }}{{ post.content?.length > 100 ? '...' : '' }}</p>
+          <div class="post-tags" v-if="post.tags?.length">
+            <span v-for="tag in post.tags.slice(0, 3)" :key="tag" class="tag">#{{ tag }}</span>
           </div>
         </div>
-        <div class="destination-content">
-          <div class="destination-location">
-            <span class="location-icon">📍</span>
-            <span>{{ destination.location }}</span>
+      </div>
+    </div>
+
+    <!-- 目的地卡片 -->
+    <div class="destinations-section">
+      <h2 v-if="searchResults.length > 0">🎯 匹配的目的地</h2>
+      <h2 v-else>🌟 热门目的地</h2>
+      
+      <div class="destinations-grid">
+        <div 
+          v-for="destination in (searchResults.length > 0 ? searchResults : popularDestinations)" 
+          :key="destination.id"
+          class="destination-card"
+        >
+          <div class="destination-image">
+            <img :src="destination.image" :alt="destination.name" />
+            <div class="destination-rating">
+              <span class="rating-star">⭐</span>
+              <span>{{ destination.rating }}</span>
+            </div>
           </div>
-          <h3>{{ destination.name }}</h3>
-          <p>{{ destination.description }}</p>
-          <button class="explore-btn">了解更多</button>
+          <div class="destination-content">
+            <div class="destination-location">
+              <span class="location-icon">📍</span>
+              <span>{{ destination.location }}</span>
+            </div>
+            <h3>{{ destination.name }}</h3>
+            <p>{{ destination.description }}</p>
+            <button class="explore-btn" @click="viewDestination(destination)">了解更多</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 目的地详情弹窗 -->
+    <div v-if="showDestinationModal" class="modal-overlay" @click.self="closeDestinationModal">
+      <div class="destination-modal">
+        <div class="modal-header">
+          <h2>{{ currentDestination?.name }}</h2>
+          <button class="modal-close" @click="closeDestinationModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-destination-info">
+            <span class="location-icon">📍</span>
+            <span>{{ currentDestination?.location }}</span>
+            <span class="rating-star">⭐</span>
+            <span>{{ currentDestination?.rating }}</span>
+          </div>
+          
+          <div v-if="isLoadingIntro" class="intro-loading">
+            <div class="loading-spinner"></div>
+            <span>AI 正在生成介绍...</span>
+          </div>
+          
+          <div v-else-if="destinationIntro" class="destination-intro">
+            <div class="ai-badge">🤖 AI 助手</div>
+            <p>{{ destinationIntro }}</p>
+          </div>
+          
+          <div v-else class="intro-error">
+            暂时无法获取详细介绍
+          </div>
         </div>
       </div>
     </div>
@@ -112,12 +329,19 @@ const handleSearch = () => {
   gap: var(--spacing-sm);
 }
 
-.search-input {
+.search-input-wrapper {
   flex: 1;
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
   padding: var(--spacing-md);
+  padding-right: 36px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   font-size: var(--font-size-base);
+  box-sizing: border-box;
 }
 
 .search-input:focus {
@@ -138,9 +362,218 @@ const handleSearch = () => {
   transition: all 0.3s ease;
 }
 
-.search-btn:hover {
+.search-btn:hover:not(:disabled) {
   background: var(--primary-hover);
   transform: translateY(-1px);
+}
+
+.search-btn:disabled {
+  background: var(--border-light);
+  cursor: not-allowed;
+}
+
+.clear-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: var(--text-light);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  padding: 0;
+}
+
+.clear-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* AI 结果样式 */
+.ai-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--border-light);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-message {
+  padding: var(--spacing-md);
+  background: rgba(231, 76, 60, 0.1);
+  color: var(--error-color);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-lg);
+  text-align: center;
+}
+
+.ai-result {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+  border: 2px solid var(--primary-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ai-result-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.ai-badge {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+  color: white;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.ai-reply {
+  background: white;
+  padding: var(--spacing-lg);
+  border-radius: var(--radius-md);
+  line-height: 1.8;
+  white-space: pre-wrap;
+  border: 1px solid var(--border-light);
+}
+
+.search-summary {
+  text-align: center;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-lg);
+  font-size: var(--font-size-sm);
+}
+
+/* 相关帖子 */
+.related-posts-section {
+  margin-bottom: var(--spacing-2xl);
+}
+
+.related-posts-section h2 {
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-lg);
+  font-size: var(--font-size-xl);
+}
+
+.posts-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.post-card {
+  background: var(--bg-primary);
+  padding: var(--spacing-lg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 1px solid var(--border-light);
+}
+
+.post-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.post-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.user-avatar-small {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.post-author {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.post-time {
+  color: var(--text-light);
+  font-size: var(--font-size-xs);
+}
+
+.post-title {
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-xs);
+  font-size: var(--font-size-base);
+}
+
+.post-content {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  margin-bottom: var(--spacing-sm);
+}
+
+.post-tags {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.tag {
+  padding: 2px 8px;
+  background: var(--bg-secondary);
+  color: var(--text-light);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+}
+
+/* 目的地卡片 */
+.destinations-section {
+  margin-top: var(--spacing-lg);
+}
+
+.destinations-section h2 {
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-lg);
+  font-size: var(--font-size-xl);
 }
 
 .destinations-grid {
@@ -244,8 +677,143 @@ const handleSearch = () => {
   color: var(--text-white);
 }
 
+/* 目的地详情弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--spacing-lg);
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.destination-modal {
+  background: var(--bg-primary);
+  border-radius: var(--radius-xl);
+  max-width: 500px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: var(--shadow-xl);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--border-light);
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-xl);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: var(--text-light);
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: var(--spacing-lg);
+  overflow-y: auto;
+  max-height: calc(80vh - 70px);
+}
+
+.modal-destination-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px dashed var(--border-light);
+}
+
+.intro-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xl);
+  color: var(--text-secondary);
+}
+
+.destination-intro {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+}
+
+.destination-intro .ai-badge {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+  color: white;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  display: inline-block;
+  margin-bottom: var(--spacing-md);
+}
+
+.destination-intro p {
+  color: var(--text-primary);
+  line-height: 1.8;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.intro-error {
+  text-align: center;
+  color: var(--text-light);
+  padding: var(--spacing-xl);
+}
+
 @media (max-width: 768px) {
-  .destinations-grid {
+  .destinations-grid,
+  .posts-list {
     grid-template-columns: 1fr;
   }
   

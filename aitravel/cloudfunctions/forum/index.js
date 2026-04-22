@@ -25,6 +25,10 @@ exports.main = async (event, context) => {
         return await deletePost(event)
       case 'my':
         return await getMyPosts(event)
+      case 'mylikes':
+        return await getMyLikedPosts(event)
+      case 'search':
+        return await searchPosts(event)
       default:
         return {
           code: 400,
@@ -43,7 +47,27 @@ exports.main = async (event, context) => {
 
 // 创建帖子
 async function createPost(event) {
-  const { userId, title, content, tags, location, days, budget } = event
+  // 解析可能为 JSON 字符串的数组字段
+  let { userId, title, content, tags, location, days, budget, places, images } = event
+  
+  console.log('=== 创建帖子收到的原始数据 ===')
+  console.log('event.images:', event.images)
+  console.log('event.images 类型:', typeof event.images)
+  console.log('images:', images)
+  console.log('images 类型:', typeof images)
+  
+  // 确保数组字段正确解析
+  if (typeof tags === 'string') {
+    try { tags = JSON.parse(tags) } catch (e) { tags = [] }
+  }
+  if (typeof places === 'string') {
+    try { places = JSON.parse(places) } catch (e) { places = [] }
+  }
+  if (typeof images === 'string') {
+    try { images = JSON.parse(images) } catch (e) { images = [] }
+  }
+  
+  console.log('解析后 images:', images)
   
   // 验证参数
   if (!userId) {
@@ -86,11 +110,17 @@ async function createPost(event) {
     location: location || '',
     days: days || 1,
     budget: budget || '',
+    places: places || [],  // 保存地点数组
+    images: images || [],  // 保存上传的图片
     likes: [],
     likeCount: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }
+  
+  console.log('云函数保存的 newPost.places:', newPost.places)
+  console.log('云函数保存的 newPost.places 长度:', newPost.places ? newPost.places.length : 'undefined')
+  console.log('云函数保存的 newPost.images:', newPost.images)
   
   const result = await postsCollection.add(newPost)
   
@@ -105,6 +135,8 @@ async function createPost(event) {
     location: newPost.location,
     days: newPost.days,
     budget: newPost.budget,
+    places: newPost.places,
+    images: newPost.images,
     likes: newPost.likes,
     likeCount: newPost.likeCount,
     createdAt: newPost.createdAt,
@@ -154,6 +186,8 @@ async function listPosts(event) {
           location: post.location || '',
           days: post.days || 1,
           budget: post.budget || '',
+          places: post.places || [],  // 包含地点数组
+          images: post.images || [],  // 包含图片数组
           likes: post.likes || [],
           likeCount: post.likeCount || 0,
           userId: post.userId || '',
@@ -199,6 +233,8 @@ async function listPosts(event) {
           location: post.location || '',
           days: post.days || 1,
           budget: post.budget || '',
+          places: post.places || [],
+          images: post.images || [],
           likes: post.likes || [],
           likeCount: post.likeCount || 0,
           userId: post.userId || '',
@@ -395,6 +431,267 @@ async function getMyPosts(event) {
     message: '获取我的帖子成功',
     data: {
       posts: result.data,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalResult.total,
+        totalPages: Math.ceil(totalResult.total / limit)
+      }
+    }
+  }
+}
+
+// 获取我点赞的帖子
+async function getMyLikedPosts(event) {
+  const { userId, page = 1, limit = 10 } = event
+  
+  if (!userId) {
+    return {
+      code: 401,
+      message: '未登录'
+    }
+  }
+  
+  const skip = (page - 1) * limit
+  
+  // 查询用户点赞的帖子（likes 数组包含用户ID）
+  const query = postsCollection
+    .where({
+      likes: userId
+    })
+    .orderBy('createdAt', 'desc')
+    .skip(skip)
+    .limit(limit)
+  
+  const result = await query.get()
+  
+  // 获取总数
+  const totalResult = await postsCollection.where({
+    likes: userId
+  }).count()
+  
+  // 处理用户信息
+  const postsWithUserInfo = await Promise.all(
+    result.data.map(async (post) => {
+      try {
+        if (post.userInfo && post.userInfo.userId) {
+          return post
+        }
+        
+        const processedPost = {
+          _id: post._id || '',
+          title: post.title || '',
+          content: post.content || '',
+          tags: post.tags || [],
+          location: post.location || '',
+          days: post.days || 1,
+          budget: post.budget || '',
+          places: post.places || [],
+          likes: post.likes || [],
+          likeCount: post.likeCount || 0,
+          userId: post.userId || '',
+          createdAt: post.createdAt || new Date().toISOString(),
+          updatedAt: post.updatedAt || new Date().toISOString()
+        }
+        
+        if (processedPost.userId) {
+          const userResult = await usersCollection.doc(processedPost.userId).get()
+          if (userResult.data && (userResult.data[0] || userResult.data)) {
+            const user = userResult.data[0] || userResult.data
+            return {
+              ...processedPost,
+              userInfo: {
+                userId: user._id,
+                username: user.username,
+                nickname: user.nickname,
+                avatar: user.avatar
+              }
+            }
+          }
+        }
+        
+        return {
+          ...processedPost,
+          userInfo: {
+            userId: processedPost.userId || '',
+            username: '匿名用户',
+            nickname: '匿名用户',
+            avatar: ''
+          }
+        }
+      } catch (error) {
+        console.error('获取用户信息失败:', error)
+        return {
+          ...post,
+          _id: post._id || '',
+          title: post.title || '',
+          content: post.content || '',
+          tags: post.tags || [],
+          location: post.location || '',
+          days: post.days || 1,
+          budget: post.budget || '',
+          places: post.places || [],
+          likes: post.likes || [],
+          likeCount: post.likeCount || 0,
+          userId: post.userId || '',
+          createdAt: post.createdAt || new Date().toISOString(),
+          updatedAt: post.updatedAt || new Date().toISOString(),
+          userInfo: {
+            userId: post.userId || '',
+            username: '未知用户',
+            nickname: '未知用户',
+            avatar: ''
+          }
+        }
+      }
+    })
+  )
+  
+  return {
+    code: 200,
+    message: '获取我点赞的帖子成功',
+    data: {
+      posts: postsWithUserInfo,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalResult.total,
+        totalPages: Math.ceil(totalResult.total / limit)
+      }
+    }
+  }
+}
+
+// 搜索帖子
+async function searchPosts(event) {
+  const { keyword, page = 1, limit = 10 } = event
+  
+  if (!keyword) {
+    return {
+      code: 400,
+      message: '搜索关键词不能为空'
+    }
+  }
+  
+  const skip = (page - 1) * limit
+  
+  // 使用正则表达式进行模糊搜索（不区分大小写）
+  // 搜索标题、内容、标签、地点、用户名
+  const query = postsCollection
+    .where({
+      $or: [
+        { title: db.RegExp({ regexp: keyword, options: 'i' }) },
+        { content: db.RegExp({ regexp: keyword, options: 'i' }) },
+        { tags: db.RegExp({ regexp: keyword, options: 'i' }) },
+        { location: db.RegExp({ regexp: keyword, options: 'i' }) },
+        { 'userInfo.nickname': db.RegExp({ regexp: keyword, options: 'i' }) },
+        { 'userInfo.username': db.RegExp({ regexp: keyword, options: 'i' }) }
+      ]
+    })
+    .orderBy('createdAt', 'desc')
+    .skip(skip)
+    .limit(limit)
+  
+  const result = await query.get()
+  
+  // 处理用户信息
+  const postsWithUserInfo = await Promise.all(
+    result.data.map(async (post) => {
+      try {
+        if (post.userInfo && post.userInfo.userId) {
+          return post
+        }
+        
+        const processedPost = {
+          _id: post._id || '',
+          title: post.title || '',
+          content: post.content || '',
+          tags: post.tags || [],
+          location: post.location || '',
+          days: post.days || 1,
+          budget: post.budget || '',
+          places: post.places || [],
+          images: post.images || [],
+          likes: post.likes || [],
+          likeCount: post.likeCount || 0,
+          userId: post.userId || '',
+          createdAt: post.createdAt || new Date().toISOString(),
+          updatedAt: post.updatedAt || new Date().toISOString()
+        }
+        
+        if (processedPost.userId) {
+          const userResult = await usersCollection.doc(processedPost.userId).get()
+          if (userResult.data && (userResult.data[0] || userResult.data)) {
+            const user = userResult.data[0] || userResult.data
+            return {
+              ...processedPost,
+              userInfo: {
+                userId: user._id,
+                username: user.username,
+                nickname: user.nickname,
+                avatar: user.avatar
+              }
+            }
+          }
+        }
+        
+        return {
+          ...processedPost,
+          userInfo: {
+            userId: processedPost.userId || '',
+            username: '匿名用户',
+            nickname: '匿名用户',
+            avatar: ''
+          }
+        }
+      } catch (error) {
+        console.error('获取用户信息失败:', error)
+        return {
+          ...post,
+          _id: post._id || '',
+          title: post.title || '',
+          content: post.content || '',
+          tags: post.tags || [],
+          location: post.location || '',
+          days: post.days || 1,
+          budget: post.budget || '',
+          places: post.places || [],
+          images: post.images || [],
+          likes: post.likes || [],
+          likeCount: post.likeCount || 0,
+          userId: post.userId || '',
+          createdAt: post.createdAt || new Date().toISOString(),
+          updatedAt: post.updatedAt || new Date().toISOString(),
+          userInfo: {
+            userId: post.userId || '',
+            username: '未知用户',
+            nickname: '未知用户',
+            avatar: ''
+          }
+        }
+      }
+    })
+  )
+  
+  // 获取搜索结果的总数
+  const totalResult = await postsCollection
+    .where({
+      $or: [
+        { title: db.RegExp({ regexp: keyword, options: 'i' }) },
+        { content: db.RegExp({ regexp: keyword, options: 'i' }) },
+        { tags: db.RegExp({ regexp: keyword, options: 'i' }) },
+        { location: db.RegExp({ regexp: keyword, options: 'i' }) },
+        { 'userInfo.nickname': db.RegExp({ regexp: keyword, options: 'i' }) },
+        { 'userInfo.username': db.RegExp({ regexp: keyword, options: 'i' }) }
+      ]
+    })
+    .count()
+  
+  return {
+    code: 200,
+    message: '搜索帖子成功',
+    data: {
+      posts: postsWithUserInfo,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
