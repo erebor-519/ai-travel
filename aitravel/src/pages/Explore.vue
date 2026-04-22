@@ -1,10 +1,20 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import OpenAI from 'openai'
 import { forumService } from '../utils/forum.js'
 
 const router = useRouter()
+const route = useRoute()
+
+// 处理 URL 参数自动搜索
+onMounted(() => {
+  const searchParam = route.query.q
+  if (searchParam) {
+    searchQuery.value = decodeURIComponent(searchParam)
+    handleSearch()
+  }
+})
 
 // AI 客户端配置
 const client = new OpenAI({
@@ -15,15 +25,7 @@ const client = new OpenAI({
 })
 
 // AI 对话系统提示
-const ai_system_prompt = `你是一个热情的旅行助手，热爱分享旅行经验。请用简洁友好的语言介绍用户搜索的目的地。
-
-要求：
-1. 介绍目的地的特色、历史文化、必玩项目
-2. 推荐最佳游览季节和时间
-3. 推荐当地美食和特色体验
-4. 语言亲切自然，像朋友聊天
-5. 适当使用 emoji 增添趣味性
-6. 内容控制在150字以内`
+const ai_system_prompt = `你是一个热情专业的旅行规划师。请为用户介绍目的地，包括：位置与特色、必游景点、最佳游览季节、推荐美食、交通方式。200字左右，内容精炼有趣。`
 
 const popularDestinations = [
   {
@@ -90,11 +92,11 @@ const handleSearch = async () => {
     const aiResponse = await client.chat.completions.create({
       messages: [
         { "role": "system", "content": ai_system_prompt },
-        { "role": "user", "content": `请介绍一下「${searchQuery.value}」这个旅行目的地` }
+        { "role": "user", "content": `请介绍一下「${searchQuery.value}」` }
       ],
       model: "astron-code-latest",
       stream: false,
-      max_completion_tokens: 300,
+      max_completion_tokens: 800,
       temperature: 0.7
     })
     aiReply.value = aiResponse.choices[0].message.content.trim()
@@ -145,11 +147,11 @@ const viewDestination = async (destination) => {
     const response = await client.chat.completions.create({
       messages: [
         { "role": "system", "content": ai_system_prompt },
-        { "role": "user", "content": `请介绍一下「${destination.name}」（位于${destination.location}）这个旅行目的地` }
+        { "role": "user", "content": `请介绍一下「${destination.name}」（位于${destination.location}）` }
       ],
       model: "astron-code-latest",
       stream: false,
-      max_completion_tokens: 300,
+      max_completion_tokens: 800,
       temperature: 0.7
     })
     destinationIntro.value = response.choices[0].message.content.trim()

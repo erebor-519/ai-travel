@@ -222,10 +222,13 @@ class AMapService {
   }
 
   // 验证地点一致性
-  async validatePlaces(geocodeResults, planText) {
+  async validatePlaces(geocodeResults, planText, isCancelledCallback = () => false) {
     if (geocodeResults.length === 0) return [];
     
     try {
+      // 检查是否已取消
+      if (isCancelledCallback()) return [];
+      
       const response = await fetch('/api/chat/completions', {
         method: 'POST',
         headers: {
@@ -362,7 +365,10 @@ class AMapService {
   }
 
   // 解析旅行计划中的地点
-  async parseTravelPlan(planText) {
+  async parseTravelPlan(planText, isCancelledCallback = () => false) {
+    // 检查是否已取消
+    if (isCancelledCallback()) return [];
+    
     // 先提取旅行计划中涉及的城市
     const cities = await this.extractCities(planText);
     
@@ -572,7 +578,7 @@ class AMapService {
         }
 
         console.log('地理编码完成，开始验证地点一致性...');
-        const validatedResults = await this.validatePlaces(rawGeocodeResults, planText);
+        const validatedResults = await this.validatePlaces(rawGeocodeResults, planText, isCancelledCallback);
         console.log('验证通过的地点:', validatedResults);
 
         // 转换为最终格式

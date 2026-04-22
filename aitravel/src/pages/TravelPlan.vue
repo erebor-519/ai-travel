@@ -1,10 +1,11 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import OpenAI from 'openai'
 import AMapService from '../features/map/amap.service.js'
 import regeneratePlanPrompt from '../features/map/regenerate-plan-prompt.md?raw'
 import LoginModal from '../components/LoginModal.vue'
+import { travelPlanService } from '../utils/travelPlan.js'
 
 window._AMapSecurityConfig = {
   securityJsCode: '49b1e1860ca6fe3ce62911c2ce619345',
@@ -40,6 +41,11 @@ const handleLogin = (user) => {
   isLoggedIn.value = true
 }
 
+// 跳转到个人主页
+const goToProfile = () => {
+  router.push('/profile')
+}
+
 // 处理登出
 const handleLogout = () => {
   localStorage.removeItem('userInfo')
@@ -48,6 +54,7 @@ const handleLogout = () => {
 }
 
 const route = useRoute()
+const router = useRouter()
 const travelInput = ref('')
 const planResult = ref('')
 const isLoading = ref(false)
@@ -56,12 +63,60 @@ const isRouteLoading = ref(false)
 const routeErrorMessage = ref('')
 const showMap = ref(true)
 const leftPanelCollapsed = ref(false)
+const savedPlaces = ref([])  // 保存拖动后的地点
+const isSaving = ref(false)
+const saveMessage = ref('')
 let originalBodyStyle = ''
 let currentDragRoute = null
 let abortController = null
 let isCancelled = false  // 全局取消标志
 
 const amapService = AMapService
+
+// 保存旅行规划
+const saveTravelPlan = async () => {
+  if (!planResult.value) {
+    saveMessage.value = '请先生成旅行计划'
+    return
+  }
+  
+  if (!isLoggedIn.value) {
+    saveMessage.value = '请先登录'
+    openLoginModal()
+    return
+  }
+  
+  isSaving.value = true
+  saveMessage.value = ''
+  
+  try {
+    const title = planResult.value.split('\n')[0]?.substring(0, 50) || '未命名规划'
+    const placesToSave = savedPlaces.value ? JSON.parse(JSON.stringify(savedPlaces.value)) : []
+    
+    const result = await travelPlanService.savePlan(
+      title,
+      planResult.value,
+      placesToSave,
+      { location: travelInput.value }
+    )
+    
+    if (result.success) {
+      saveMessage.value = '保存成功！'
+      setTimeout(() => {
+        saveMessage.value = ''
+      }, 2000)
+    } else {
+      saveMessage.value = result.message || '保存失败'
+    }
+  } catch (error) {
+    console.error('保存失败:', error)
+    saveMessage.value = '保存失败，请稍后重试'
+  } finally {
+    isSaving.value = false
+  }
+}
+
+
 
 const client = new OpenAI({
   baseURL: window.location.origin + '/api',
@@ -192,7 +247,7 @@ const generateRoutePlan = async (tempPlan) => {
     // 检查是否已取消
     if (isCancelled) return
     
-    const places = await amapService.parseTravelPlan(planToUse)
+    const places = await amapService.parseTravelPlan(planToUse, () => isCancelled)
     
     // 检查是否已取消
     if (isCancelled) return
@@ -307,7 +362,51 @@ const showRouteOnMap = async (places) => {
     // 检查是否已取消
     if (isCancelled) return
     
+    // 创建 DragRoute
     currentDragRoute = new window.AMap.DragRoute(map, path, window.AMap.DrivingPolicy.LEAST_FEE)
+    
+    // 保存原始地点名称映射
+    const originalNames = places.map((place, index) => place.name || `地点${index + 1}`)
+    
+    // 监听路径规划完成事件（初始加载和拖动后都会触发）
+    currentDragRoute.on('complete', function(e) {
+      console.log('路线规划完成')
+      
+      // 从 e.data 获取最新的起点、途经点、终点
+      const newPlaces = []
+      
+      // 起点
+      if (e.data && e.data.start) {
+        const startLoc = e.data.start.location
+        newPlaces.push({
+          name: originalNames[0] || '起点',
+          location: [startLoc.lng, startLoc.lat]
+        })
+      }
+      
+      // 途经点
+      if (e.data && e.data.waypoints && e.data.waypoints.length > 0) {
+        e.data.waypoints.forEach((wp, index) => {
+          newPlaces.push({
+            name: originalNames[index + 1] || `途经点${index + 1}`,
+            location: [wp.location.lng, wp.location.lat]
+          })
+        })
+      }
+      
+      // 终点
+      if (e.data && e.data.end) {
+        const endLoc = e.data.end.location
+        newPlaces.push({
+          name: originalNames[originalNames.length - 1] || '终点',
+          location: [endLoc.lng, endLoc.lat]
+        })
+      }
+      
+      console.log('保存的地点:', newPlaces)
+      savedPlaces.value = newPlaces
+    })
+    
     currentDragRoute.search()
     
     map.setCenter(places[0].location)
@@ -359,14 +458,34 @@ onMounted(() => {
   if (route.query.input) {
     travelInput.value = decodeURIComponent(route.query.input)
     generateTravelPlan()
+  } else if (route.query.plan) {
+    // 复现旅行规划
+    try {
+      const planData = JSON.parse(decodeURIComponent(route.query.plan))
+      console.log('复现规划数据:', planData)
+      
+      if (planData.content) {
+        planResult.value = planData.content
+      }
+      
+      if (planData.places && planData.places.length > 0) {
+        savedPlaces.value = planData.places
+        showMap.value = true
+        setTimeout(() => {
+          showRouteOnMap(planData.places)
+        }, 300)
+      }
+    } catch (error) {
+      console.error('复现规划失败:', error)
+    }
   }
   initMap()
 })
 
 onBeforeUnmount(() => {
   // 设置取消标志，停止所有操作
+  // 终止所有生成进程
   isCancelled = true
-  
   // 取消正在进行的 API 请求
   if (abortController) {
     abortController.abort()
@@ -383,6 +502,9 @@ onBeforeUnmount(() => {
     }
     window.currentMap = null
   }
+  
+  // 终止所有AMap服务
+  amapService.destroy()
 })
 </script>
 
@@ -409,7 +531,7 @@ onBeforeUnmount(() => {
             <a href="#" @click.prevent="openLoginModal">登录</a>
           </li>
           <li v-else class="user-menu">
-            <div class="user-info" @click="handleLogout">
+            <div class="user-info" @click="goToProfile">
               <img :src="userInfo.avatar" alt="avatar" class="user-avatar" />
               <span>{{ userInfo.nickname }}</span>
             </div>
@@ -455,8 +577,21 @@ onBeforeUnmount(() => {
           
           <div v-if="planResult" class="plan-result">
             <h3>您的旅行计划</h3>
-            <div class="plan-content">
-              <pre>{{ planResult }}</pre>
+            
+            <!-- 可编辑的计划文本 -->
+            <div class="plan-display">
+              <textarea 
+                v-model="planResult" 
+                class="edit-textarea"
+                rows="8"
+              ></textarea>
+              <div class="plan-actions">
+                <button class="btn-primary" @click="saveTravelPlan" :disabled="isSaving">
+                  {{ isSaving ? '保存中...' : '保存计划' }}
+                </button>
+              </div>
+              <div class="save-tip">提示：您可以在地图上拖动途径点调整路线，保存时会保存您调整后的位置</div>
+              <div v-if="saveMessage" class="save-message">{{ saveMessage }}</div>
             </div>
           </div>
           
@@ -747,6 +882,47 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
+.btn-primary {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  transition: background 0.3s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.btn-primary:disabled {
+  background: var(--border-light);
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  transition: all 0.3s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  border-color: var(--primary-color);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .error-message {
   color: var(--error-color);
   padding: var(--spacing-xs);
@@ -785,6 +961,52 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
   font-size: 0.9rem;
   line-height: 1.6;
+  margin: 0;
+}
+
+.plan-display {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.edit-textarea {
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.edit-textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.save-message {
+  padding: var(--spacing-xs);
+  background: rgba(46, 204, 113, 0.1);
+  color: #27ae60;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+.save-tip {
+  padding: var(--spacing-xs);
+  background: rgba(52, 152, 219, 0.1);
+  color: #3498db;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
 }
 
 .route-btn {
