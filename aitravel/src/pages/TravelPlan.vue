@@ -403,7 +403,7 @@ onBeforeUnmount(() => {
             <router-link to="/poi-experience">足迹</router-link>
           </li>
           <li>
-            <router-link to="/travel-plan">旅行规划</router-link>
+            <router-link to="/travel-plan">规划</router-link>
           </li>
           <li v-if="!isLoggedIn">
             <a href="#" @click.prevent="openLoginModal">登录</a>
