@@ -2,6 +2,11 @@
 import placeExtractionPrompt from './place-extraction-prompt.md?raw';
 import placeValidationPrompt from './place-validation-prompt.md?raw';
 import cityExtractionPrompt from './city-extraction-prompt.md?raw';
+import extractCitiesFromInputPrompt from './extract-cities-from-input-prompt.md?raw';
+import extractKeyPlacesPrompt from './extract-key-places-prompt.md?raw';
+import filterKeyPlacesPrompt from './filter-key-places-prompt.md?raw';
+import extractPlacesCitiesPrompt from './extract-places-cities-prompt.md?raw';
+import preliminaryPlanPrompt from './preliminary-plan-prompt.md?raw';
 
 class AMapService {
   constructor() {
@@ -221,6 +226,393 @@ class AMapService {
     }
   }
 
+  // 周边搜索服务
+  async searchAround(keywords, location, radius = 1000, poiType = '') {
+    // 使用高德地图周边搜索API
+    const typesParam = poiType ? `&types=${encodeURIComponent(poiType)}` : '&types=风景名胜区|风景名胜|景点|历史遗迹|博物馆|公园广场|观景点|文化场馆|公园|寺庙|教堂|古迹|古建筑|世界遗产';
+    const response = await fetch(`/amap/v3/place/around?keywords=${encodeURIComponent(keywords)}&location=${location}&radius=${radius}${typesParam}&offset=20&page=1&key=${this.serviceKey}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === '1' && data.pois && data.pois.length > 0) {
+      const pois = data.pois.map(poi => {
+        const [lngStr, latStr] = poi.location.split(',');
+        const lng = parseFloat(lngStr);
+        const lat = parseFloat(latStr);
+        
+        return {
+          id: poi.id,
+          name: poi.name,
+          address: poi.address,
+          location: [lng, lat],
+          locationStr: poi.location,
+          type: poi.type,
+          businessArea: poi.business_area,
+          city: poi.cityname,
+          adcode: poi.adcode,
+          distance: poi.distance
+        };
+      });
+      
+      console.log(`周边搜索成功: ${keywords} (${location}, radius: ${radius}) -> ${pois.length}个地点`);
+      return pois;
+    } else {
+      console.warn(`周边搜索未找到结果: ${keywords} (${location}, radius: ${radius})`);
+      return [];
+    }
+  }
+
+  // POI详情查询服务
+  async getPOIDetail(poiId) {
+    const response = await fetch(`/amap/v3/place/detail?id=${poiId}&key=${this.serviceKey}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === '1' && data.pois && data.pois.length > 0) {
+      const poi = data.pois[0];
+      const [lngStr, latStr] = poi.location.split(',');
+      const lng = parseFloat(lngStr);
+      const lat = parseFloat(latStr);
+      
+      console.log(`POI详情查询成功: ${poiId} -> ${poi.name}`);
+      return {
+        id: poi.id,
+        name: poi.name,
+        address: poi.address,
+        location: [lng, lat],
+        locationStr: poi.location,
+        type: poi.type,
+        businessArea: poi.business_area,
+        city: poi.cityname,
+        adcode: poi.adcode,
+        postcode: poi.postcode,
+        tel: poi.tel,
+        website: poi.website,
+        email: poi.email,
+        pcode: poi.pcode,
+        pname: poi.pname,
+        adname: poi.adname,
+        importance: poi.importance,
+        photos: poi.photos || []
+      };
+    } else {
+      throw new Error(`POI详情查询失败: ${data.info || '未知错误'}`);
+    }
+  }
+
+  // 从用户输入提取城市
+  async extractCitiesFromInput(userInput) {
+    try {
+      const response = await fetch('/api/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Failover-Enabled': 'true',
+          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              'role': 'system',
+              'content': extractCitiesFromInputPrompt
+            },
+            {
+              'role': 'user',
+              'content': userInput
+            }
+          ],
+          model: 'astron-code-latest',
+          stream: false,
+          max_completion_tokens: 512,
+          temperature: 0.3,
+          top_p: 0.95,
+          frequency_penalty: 0
+        })
+      });
+
+      if (!response.ok) {
+        console.warn('从输入提取城市失败');
+        return [];
+      }
+
+      const data = await response.json();
+      if (data.choices && data.choices.length > 0) {
+        const content = data.choices[0].message.content.trim();
+        try {
+          const result = JSON.parse(content);
+          console.log('从输入提取到的城市:', result.cities);
+          return result.cities || [];
+        } catch (parseError) {
+          console.warn('解析城市响应失败:', parseError);
+          return [];
+        }
+      }
+      return [];
+    } catch (error) {
+      console.warn('从输入提取城市失败，继续执行:', error);
+      return [];
+    }
+  }
+
+  // 搜索城市POI
+  async searchCityPOIs(city, poiTypes = '风景名胜区|风景名胜|景点|历史遗迹|博物馆|公园广场|观景点|文化场馆|公园|寺庙|教堂|古迹|古建筑|世界遗产', limit = 30) {
+    const response = await fetch(`/amap/v3/place/text?keywords=景点&city=${encodeURIComponent(city)}&types=${encodeURIComponent(poiTypes)}&offset=${limit}&page=1&key=${this.serviceKey}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === '1' && data.pois && data.pois.length > 0) {
+      const pois = data.pois.map(poi => {
+        const [lngStr, latStr] = poi.location.split(',');
+        const lng = parseFloat(lngStr);
+        const lat = parseFloat(latStr);
+        
+        return {
+          id: poi.id,
+          name: poi.name,
+          address: poi.address,
+          location: [lng, lat],
+          locationStr: poi.location,
+          type: poi.type,
+          businessArea: poi.business_area,
+          city: poi.cityname,
+          adcode: poi.adcode
+        };
+      });
+      
+      console.log(`城市POI搜索成功: ${city} -> ${pois.length}个地点`);
+      return pois;
+    } else {
+      console.warn(`城市POI搜索未找到结果: ${city}`);
+      return [];
+    }
+  }
+
+  // 从旅行计划中提取关键地点经纬度
+  parseKeyLocationsFromPlan(planText) {
+    try {
+      // 查找 --- 分隔符
+      const separatorIndex = planText.indexOf('---');
+      if (separatorIndex === -1) {
+        console.warn('未找到关键地点经纬度信息分隔符');
+        return [];
+      }
+      
+      // 提取分隔符后的内容
+      const keyLocationsSection = planText.substring(separatorIndex + 3).trim();
+      
+      // 查找JSON数组
+      const jsonMatch = keyLocationsSection.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        console.warn('未找到关键地点经纬度JSON数据');
+        return [];
+      }
+      
+      const jsonString = jsonMatch[0];
+      const keyLocations = JSON.parse(jsonString);
+      
+      // 转换为需要的格式
+      return keyLocations.map(loc => ({
+        name: loc.name,
+        location: Array.isArray(loc.location) 
+          ? loc.location 
+          : loc.location.replace(/[\[\]]/g, '').split(',').map(Number)
+      })).filter(loc => loc.location.length === 2 && !isNaN(loc.location[0]) && !isNaN(loc.location[1]));
+      
+    } catch (error) {
+      console.error('解析关键地点经纬度失败:', error);
+      return [];
+    }
+  }
+
+  // 从用户输入提取关键地点
+  async extractKeyPlacesFromInput(userInput) {
+    try {
+      const response = await fetch('/api/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Failover-Enabled': 'true',
+          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              'role': 'system',
+              'content': extractKeyPlacesPrompt
+            },
+            {
+              'role': 'user',
+              'content': userInput
+            }
+          ],
+          model: 'astron-code-latest',
+          stream: false,
+          max_completion_tokens: 512,
+          temperature: 0.3,
+          top_p: 0.95,
+          frequency_penalty: 0
+        })
+      });
+
+      if (!response.ok) {
+        console.warn('从输入提取关键地点失败');
+        return [];
+      }
+
+      const data = await response.json();
+      if (data.choices && data.choices.length > 0) {
+        const content = data.choices[0].message.content.trim();
+        // 按行分割，过滤空行
+        const places = content.split('\n')
+          .map(place => place.trim())
+          .filter(place => place && place !== '无明确地点');
+        
+        console.log('从输入提取到的关键地点:', places);
+        return places;
+      }
+      return [];
+    } catch (error) {
+      console.warn('从输入提取关键地点失败，继续执行:', error);
+      return [];
+    }
+  }
+
+  // 关键字搜索地点（前10个）
+  async keywordSearchPlaces(keyword, limit = 10) {
+    const typesParam = '&types=风景名胜区|风景名胜|景点|历史遗迹|博物馆|公园广场|观景点|文化场馆|公园|寺庙|教堂|古迹|古建筑|世界遗产';
+    const response = await fetch(`/amap/v3/place/text?keywords=${encodeURIComponent(keyword)}${typesParam}&offset=${limit}&page=1&key=${this.serviceKey}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === '1' && data.pois && data.pois.length > 0) {
+      const pois = data.pois.map(poi => {
+        const [lngStr, latStr] = poi.location.split(',');
+        const lng = parseFloat(lngStr);
+        const lat = parseFloat(latStr);
+        
+        return {
+          id: poi.id,
+          name: poi.name,
+          address: poi.address,
+          location: [lng, lat],
+          locationStr: poi.location,
+          type: poi.type,
+          businessArea: poi.business_area,
+          city: poi.cityname,
+          adcode: poi.adcode
+        };
+      });
+      
+      console.log(`关键字搜索成功: ${keyword} -> ${pois.length}个地点`);
+      return pois;
+    } else {
+      console.warn(`关键字搜索未找到结果: ${keyword}`);
+      return [];
+    }
+  }
+
+  // 从搜索结果中筛选最符合的地点
+  async filterKeyPlaces(searchResults, userInput) {
+    try {
+      const response = await fetch('/api/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Failover-Enabled': 'true',
+          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              'role': 'system',
+              'content': filterKeyPlacesPrompt
+            },
+            {
+              'role': 'user',
+              'content': JSON.stringify({
+                userOriginalInput: userInput,
+                searchResults: searchResults.map(r => ({
+                  id: r.id,
+                  name: r.name,
+                  address: r.address,
+                  city: r.city
+                }))
+              })
+            }
+          ],
+          model: 'astron-code-latest',
+          stream: false,
+          max_completion_tokens: 512,
+          temperature: 0.3,
+          top_p: 0.95,
+          frequency_penalty: 0
+        })
+      });
+
+      if (!response.ok) {
+        console.warn('筛选地点失败');
+        return searchResults.slice(0, 6); // 返回前6个作为备选
+      }
+
+      const data = await response.json();
+      if (data.choices && data.choices.length > 0) {
+        const content = data.choices[0].message.content.trim();
+        const selectedIds = content.split('\n')
+          .map(id => id.trim())
+          .filter(id => id);
+        
+        console.log('筛选出的地点ID:', selectedIds);
+        
+        // 根据ID查找对应的地点
+        const selectedPlaces = searchResults.filter(r => selectedIds.includes(r.id));
+        console.log('筛选出的地点:', selectedPlaces);
+        
+        return selectedPlaces;
+      }
+      return searchResults.slice(0, 6); // 返回前6个作为备选
+    } catch (error) {
+      console.warn('筛选地点失败，返回前6个:', error);
+      return searchResults.slice(0, 6);
+    }
+  }
+
+  // 根据POI ID查询POI详情
+  async getPOIByID(poiId) {
+    return await this.getPOIDetail(poiId);
+  }
+
   // 验证地点一致性
   async validatePlaces(geocodeResults, planText, isCancelledCallback = () => false) {
     if (geocodeResults.length === 0) return [];
@@ -395,7 +787,7 @@ class AMapService {
           ],
           model: 'astron-code-latest',
           stream: false,
-          max_completion_tokens: 2024,
+          max_completion_tokens: 1000,
           temperature: 0.6,
           top_p: 0.95,
           frequency_penalty: 0
@@ -673,6 +1065,202 @@ class AMapService {
 
     marker.setMap(this.map);
     return marker;
+  }
+
+  // 根据用户输入生成初步旅行计划
+  async generatePreliminaryPlan(userInput) {
+    try {
+      const response = await fetch('/api/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Failover-Enabled': 'true',
+          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              'role': 'system',
+              'content': preliminaryPlanPrompt
+            },
+            {
+              'role': 'user',
+              'content': userInput
+            }
+          ],
+          model: 'astron-code-latest',
+          stream: false,
+          max_completion_tokens: 1024,
+          temperature: 0.7,
+          top_p: 0.95,
+          frequency_penalty: 0
+        })
+      });
+
+      if (!response.ok) {
+        console.warn('生成初步旅行计划失败');
+        return userInput; // 失败时返回原始输入
+      }
+
+      const data = await response.json();
+      if (data.choices && data.choices.length > 0) {
+        const content = data.choices[0].message.content.trim();
+        console.log('生成的初步旅行计划:', content);
+        return content;
+      }
+      return userInput;
+    } catch (error) {
+      console.warn('生成初步旅行计划失败，继续执行:', error);
+      return userInput;
+    }
+  }
+
+  // 从初步旅行计划中提取地点和城市信息
+  async extractPlacesAndCitiesFromInput(userInput) {
+    try {
+      const response = await fetch('/api/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Failover-Enabled': 'true',
+          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              'role': 'system',
+              'content': extractPlacesCitiesPrompt
+            },
+            {
+              'role': 'user',
+              'content': userInput
+            }
+          ],
+          model: 'astron-code-latest',
+          stream: false,
+          max_completion_tokens: 1024,
+          temperature: 0.3,
+          top_p: 0.95,
+          frequency_penalty: 0
+        })
+      });
+
+      if (!response.ok) {
+        console.warn('提取地点和城市信息失败');
+        return { places: [] };
+      }
+
+      const data = await response.json();
+      if (data.choices && data.choices.length > 0) {
+        let content = data.choices[0].message.content.trim();
+        try {
+          // 清理markdown代码块标记
+          if (content.startsWith('```json') || content.startsWith('```')) {
+            content = content.replace(/^```json\s*/, '').replace(/^```\s*/, '');
+          }
+          if (content.endsWith('```')) {
+            content = content.replace(/\s*```$/, '');
+          }
+          content = content.trim();
+          
+          const result = JSON.parse(content);
+          console.log('从初步计划提取到的地点和城市:', result);
+          return result;
+        } catch (parseError) {
+          console.warn('解析地点和城市信息失败:', parseError);
+          return { places: [] };
+        }
+      }
+      return { places: [] };
+    } catch (error) {
+      console.warn('提取地点和城市信息失败，继续执行:', error);
+      return { places: [] };
+    }
+  }
+
+  // 验证城市名，返回该城市的POI（不限制类型）
+  async verifyCity(cityName, limit = 5) {
+    const cityParam = cityName ? `&city=${encodeURIComponent(cityName)}` : '';
+    const response = await fetch(`/amap/v3/place/text?keywords=${encodeURIComponent(cityName)}${cityParam}&offset=${limit}&page=1&key=${this.serviceKey}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === '1' && data.pois && data.pois.length > 0) {
+      const pois = data.pois.map(poi => {
+        const [lngStr, latStr] = poi.location.split(',');
+        const lng = parseFloat(lngStr);
+        const lat = parseFloat(latStr);
+        
+        return {
+          id: poi.id,
+          name: poi.name,
+          address: poi.address,
+          location: [lng, lat],
+          locationStr: poi.location,
+          type: poi.type,
+          businessArea: poi.business_area,
+          city: poi.cityname,
+          adcode: poi.adcode
+        };
+      });
+      
+      console.log(`城市验证成功: ${cityName} -> ${pois.length}个地点`);
+      return pois;
+    } else {
+      console.warn(`城市验证未找到结果: ${cityName}`);
+      return [];
+    }
+  }
+
+  // 在指定城市下进行关键字搜索
+  async keywordSearchInCity(keyword, city, limit = 10) {
+    const typesParam = '&types=风景名胜区|风景名胜|景点|历史遗迹|博物馆|公园广场|观景点|文化场馆|公园|寺庙|教堂|古迹|古建筑|世界遗产';
+    const cityParam = city ? `&city=${encodeURIComponent(city)}` : '';
+    const response = await fetch(`/amap/v3/place/text?keywords=${encodeURIComponent(keyword)}${cityParam}${typesParam}&offset=${limit}&page=1&key=${this.serviceKey}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.status === '1' && data.pois && data.pois.length > 0) {
+      const pois = data.pois.map(poi => {
+        const [lngStr, latStr] = poi.location.split(',');
+        const lng = parseFloat(lngStr);
+        const lat = parseFloat(latStr);
+        
+        return {
+          id: poi.id,
+          name: poi.name,
+          address: poi.address,
+          location: [lng, lat],
+          locationStr: poi.location,
+          type: poi.type,
+          businessArea: poi.business_area,
+          city: poi.cityname,
+          adcode: poi.adcode
+        };
+      });
+      
+      console.log(`城市内关键字搜索成功: ${keyword} (${city}) -> ${pois.length}个地点`);
+      return pois;
+    } else {
+      console.warn(`城市内关键字搜索未找到结果: ${keyword} (${city})`);
+      return [];
+    }
   }
 
   // 清理

@@ -580,7 +580,7 @@ onMounted(() => {
           <span v-if="isSearching" class="search-hint">搜索结果: {{ pagination.total }} 条</span>
         </div>
         <button class="create-post-btn" @click="openCreatePostModal">
-          ✏️ 发布旅行规划
+          ✏️ 发布足迹
         </button>
       </div>
 
@@ -722,7 +722,7 @@ onMounted(() => {
         <div v-if="showCreatePostModal" class="modal-overlay" @click.self="closeCreatePostModal">
           <div class="modal-content">
             <div class="modal-header">
-              <h2>发布旅行规划</h2>
+              <h2>发布足迹</h2>
               <button class="close-btn" @click="closeCreatePostModal">×</button>
             </div>
             

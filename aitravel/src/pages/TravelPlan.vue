@@ -3,7 +3,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import OpenAI from 'openai'
 import AMapService from '../features/map/amap.service.js'
-import regeneratePlanPrompt from '../features/map/regenerate-plan-prompt.md?raw'
+import generateFinalPlanPrompt from '../features/map/generate-final-plan-prompt.md?raw'
 import LoginModal from '../components/LoginModal.vue'
 import { travelPlanService } from '../utils/travelPlan.js'
 
@@ -125,32 +125,6 @@ const client = new OpenAI({
   dangerouslyAllowBrowser: true
 })
 
-const analysis_system_prompt = `你是一个专业的旅行规划师，擅长根据用户需求生成详细的旅行计划。请按照以下格式输出：
-
-旅行计划标题
-
-行程概览
-总天数：X天
-预算范围：XXX
-旅行主题：XXX
-
-每日行程
-
-Day 1
-上午：[活动内容] - [地点] - [时间]
-下午：[活动内容] - [地点] - [时间]
-晚上：[活动内容] - [地点] - [时间]
-
-Day 2
-...以此类推
-
-注意事项
-1. [注意事项1]
-2. [注意事项2]
-...
-
-请确保计划详细、合理，旅行路线不能重复，一天游玩的地方不宜相距太远，计划符合用户的需求。`
-
 const generateTravelPlan = async () => {
   if (!travelInput.value.trim()) {
     errorMessage.value = '请输入旅行需求'
@@ -162,6 +136,7 @@ const generateTravelPlan = async () => {
   planResult.value = ''
   showMap.value = false
   isCancelled = false  // 重置取消标志
+  savedPlaces.value = [] // 重置保存的地点
   
   // 创建 AbortController 用于取消请求
   abortController = new AbortController()
@@ -184,30 +159,175 @@ const generateTravelPlan = async () => {
   }
 
   try {
+    // 第0步：根据用户输入生成初步旅行计划
+    console.log('第0步：生成初步旅行计划...')
+    const preliminaryPlan = await amapService.generatePreliminaryPlan(travelInput.value)
+    
+    if (isCancelled) return
+    console.log('初步旅行计划:', preliminaryPlan)
+
+    // 第一步：从初步旅行计划中提取地点和城市信息
+    console.log('第一步：从初步计划中提取地点和城市信息...')
+    const placesAndCities = await amapService.extractPlacesAndCitiesFromInput(preliminaryPlan)
+    
+    if (isCancelled) return
+    
+    if (!placesAndCities || !placesAndCities.places || placesAndCities.places.length === 0) {
+      errorMessage.value = '未能从您的输入中识别出地点，请更明确地提及地点名称'
+      isLoading.value = false
+      return
+    }
+    
+    console.log('提取到的地点和城市:', placesAndCities)
+
+    // 第二步：对城市名用关键字搜索，用搜索结果的cityname替换原来的城市名
+    console.log('第二步：验证城市并用高德城市替代...')
+    const cities = [...new Set(placesAndCities.places.map(p => p.city).filter(city => city))]
+    
+    // 用于存储城市映射：原始城市名 -> 高德城市名
+    const cityNameMap = {}
+    let cityPOIs = []
+    
+    if (cities.length > 0) {
+      for (let i = 0; i < cities.length; i++) {
+        if (isCancelled) return
+        
+        const originalCity = cities[i]
+        try {
+          // 对城市名本身进行关键字搜索（不限制类型）
+          const pois = await amapService.verifyCity(originalCity, 5)
+          if (pois && pois.length > 0) {
+            // 从第一个POI中获取高德地图的cityname
+            const gaodeCity = pois[0].city
+            cityNameMap[originalCity] = gaodeCity
+            console.log(`城市验证：原始城市 "${originalCity}" -> 高德城市 "${gaodeCity}"`)
+            cityPOIs = [...cityPOIs, ...pois]
+          }
+        } catch (error) {
+          console.warn(`验证城市失败: ${originalCity}`, error)
+        }
+        
+        // 增加一点延迟避免API限流
+        if (cities.length > 1 && i < cities.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200))
+        }
+      }
+    }
+    
+    if (isCancelled) return
+    console.log('城市映射:', cityNameMap)
+    console.log(`城市POI搜索找到${cityPOIs.length}个`)
+    
+    // 更新placesAndCities中的城市名，用高德城市名替代
+    placesAndCities.places = placesAndCities.places.map(placeObj => {
+      if (cityNameMap[placeObj.city]) {
+        return {
+          ...placeObj,
+          city: cityNameMap[placeObj.city]
+        }
+      }
+      return placeObj
+    })
+    console.log('更新后的地点和城市:', placesAndCities)
+
+    // 第三步：对每个地点在其城市下进行关键字搜索，返回前10个结果
+    console.log('第三步：在城市内关键字搜索...')
+    let allSearchResults = []
+    for (let i = 0; i < placesAndCities.places.length; i++) {
+      if (isCancelled) return
+      
+      const placeObj = placesAndCities.places[i]
+      const searchResults = await amapService.keywordSearchInCity(placeObj.place, placeObj.city, 10)
+      if (searchResults.length > 0) {
+        allSearchResults = [...allSearchResults, ...searchResults]
+      }
+      
+      // 增加一点延迟避免API限流
+      if (placesAndCities.places.length > 1 && i < placesAndCities.places.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+    }
+    
+    if (isCancelled) return
+    
+    // 合并城市POI和关键字搜索结果
+    let combinedResults = [...cityPOIs, ...allSearchResults]
+    console.log(`合并后共${combinedResults.length}个搜索结果`)
+
+    // 第四步：调用大模型，根据用户输入、第一次输出和所有搜索结果筛选地点并生成旅行计划
+    console.log('第四步：生成旅行计划...')
+    
+    const poisForLLM = combinedResults.map(poi => ({
+      name: poi.name,
+      address: poi.address,
+      location: poi.locationStr,
+      city: poi.city
+    }))
+
     const response = await client.chat.completions.create({
       messages: [
         {
           "role": "system",
-          "content": analysis_system_prompt
+          "content": generateFinalPlanPrompt
         },
         {
           "role": "user",
-          "content": `旅行需求：${travelInput.value}\n\n请生成详细的旅行计划。`
+          "content": JSON.stringify({
+            userOriginalInput: travelInput.value,
+            preliminaryPlan: preliminaryPlan,
+            userExtractedPlaces: placesAndCities.places,
+            availablePOIs: poisForLLM
+          })
         }
       ],
       model: "astron-code-latest",
       stream: false,
-      max_completion_tokens: 2024,
-      temperature: 0.6,
+      max_completion_tokens: 2000,
+      temperature: 0.7,
       top_p: 0.95,
       frequency_penalty: 0,
       signal: abortController.signal
     })
 
-    const content = response.choices[0].message.content.trim()
-    // 暂时不显示原始旅行计划，等待重新生成
-    const tempPlan = content
-    await generateRoutePlan(tempPlan)
+    if (isCancelled) return
+
+    const planContent = response.choices[0].message.content.trim()
+    
+    // 在显示时去掉经纬度信息部分，但保留完整内容用于路径规划
+    const separatorIndex = planContent.indexOf('---')
+    if (separatorIndex !== -1) {
+      planResult.value = planContent.substring(0, separatorIndex).trim()
+    } else {
+      planResult.value = planContent
+    }
+
+    // 从计划中提取关键地点并显示地图
+    console.log('解析关键地点并显示地图...')
+    const keyLocations = amapService.parseKeyLocationsFromPlan(planContent)
+    
+    if (keyLocations.length < 2) {
+      console.warn('关键地点数量不足，尝试使用搜索结果中的地点生成路线')
+      // 尝试使用搜索结果中的地点
+      const fallbackLocations = combinedResults.slice(0, 8).map(poi => ({
+        name: poi.name,
+        location: poi.location
+      }))
+      
+      if (fallbackLocations.length >= 2) {
+        savedPlaces.value = fallbackLocations
+        showMap.value = true
+        await showRouteOnMap(fallbackLocations)
+      } else {
+        errorMessage.value = '计划生成成功，但未能解析出足够的地点用于地图显示'
+      }
+      isLoading.value = false
+      return
+    }
+    
+    savedPlaces.value = keyLocations
+    showMap.value = true
+    await showRouteOnMap(keyLocations)
+
   } catch (error) {
     // 检查是否是用户取消的请求
     if (isCancelled || error.name === 'AbortError' || error.cmessage?.includes('aborted')) {
@@ -227,90 +347,6 @@ const generateTravelPlan = async () => {
     }
   } finally {
     isLoading.value = false
-  }
-}
-
-const generateRoutePlan = async (tempPlan) => {
-  // 检查是否已取消
-  if (isCancelled) return
-  
-  const planToUse = tempPlan || planResult.value
-  if (!planToUse) {
-    routeErrorMessage.value = '请先生成旅行计划'
-    return
-  }
-
-  isRouteLoading.value = true
-  routeErrorMessage.value = ''
-
-  try {
-    // 检查是否已取消
-    if (isCancelled) return
-    
-    const places = await amapService.parseTravelPlan(planToUse, () => isCancelled)
-    
-    // 检查是否已取消
-    if (isCancelled) return
-
-    if (places.length < 2) {
-      console.log('提取的地点数量不足:', places.length, '地点:', places);
-      routeErrorMessage.value = '无法从旅行计划中提取足够的地点，请确保计划中包含明确的地点信息'
-      return
-    }
-
-    // 检查是否已取消
-    if (isCancelled) return
-
-    // 使用筛选后的地点重新生成旅行计划
-    const placeNames = places.map(place => place.name).join('、')
-    const regeneratedPlan = await client.chat.completions.create({
-      messages: [
-        {
-          "role": "system",
-          "content": regeneratePlanPrompt
-        },
-        {
-          "role": "user",
-          "content": `用户原始输入：${travelInput.value}\n\n筛选后的地点：${placeNames}\n\n请优先考虑用户原始输入，根据这些地点重新生成详细的旅行计划。`
-        }
-      ],
-      model: "astron-code-latest",
-      stream: false,
-      max_completion_tokens: 2024,
-      temperature: 0.6,
-      top_p: 0.95,
-      frequency_penalty: 0,
-      signal: abortController.signal
-    })
-    
-    // 检查是否已取消
-    if (isCancelled) return
-
-    planResult.value = regeneratedPlan.choices[0].message.content.trim()
-
-    showMap.value = true
-    await showRouteOnMap(places)
-  } catch (error) {
-    // 检查是否是用户取消的请求
-    if (isCancelled || error.name === 'AbortError' || error.cmessage?.includes('aborted')) {
-      console.log('操作已取消')
-      return
-    }
-    console.error('生成路径规划失败:', error)
-    if (error.response) {
-      console.error('API响应错误:', error.response.status, error.response.data)
-      routeErrorMessage.value = `API响应错误: ${error.response.status}`
-    } else if (error.request) {
-      console.error('无API响应:', error.request)
-      routeErrorMessage.value = '无法连接到API服务器，请检查网络连接'
-    } else {
-      console.error('请求设置错误:', error.message)
-      routeErrorMessage.value = `请求设置错误: ${error.message}`
-    }
-  } finally {
-    if (!isCancelled) {
-      isRouteLoading.value = false
-    }
   }
 }
 
@@ -345,7 +381,10 @@ const showRouteOnMap = async (places) => {
   }
   
   // 检查是否已取消
-  if (isCancelled) return
+  if (isCancelled) {
+    try { map.destroy() } catch (e) {}
+    return
+  }
   
   const map = new window.AMap.Map("container", {
     resizeEnable: true
@@ -816,10 +855,6 @@ onBeforeUnmount(() => {
     left: auto;
     max-height: none;
   }
-  
-  .tip {
-    top: 80px;
-  }
 }
 
 .plan-generator {
@@ -902,27 +937,6 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
-.btn-secondary {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  transition: all 0.3s ease;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: var(--bg-tertiary);
-  border-color: var(--primary-color);
-}
-
-.btn-secondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .error-message {
   color: var(--error-color);
   padding: var(--spacing-xs);
@@ -939,29 +953,6 @@ onBeforeUnmount(() => {
   margin-bottom: var(--spacing-xs);
   color: var(--text-primary);
   font-size: var(--font-size-base);
-}
-
-.plan-content {
-  background: var(--bg-secondary);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius-md);
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-@media (min-width: 1024px) {
-  .plan-content {
-    max-height: 500px;
-  }
-}
-
-.plan-content pre {
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  color: var(--text-primary);
-  font-size: 0.9rem;
-  line-height: 1.6;
-  margin: 0;
 }
 
 .plan-display {
@@ -1007,15 +998,6 @@ onBeforeUnmount(() => {
   color: #3498db;
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
-}
-
-.route-btn {
-  margin-top: var(--spacing-md);
-  background: var(--secondary-color);
-}
-
-.route-btn:hover:not(:disabled) {
-  background: var(--secondary-dark);
 }
 
 .map-section {
