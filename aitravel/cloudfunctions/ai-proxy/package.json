@@ -1,0 +1,20 @@
+{
+  "name": "ai-proxy-function",
+  "version": "1.0.0",
+  "description": "AI代理云函数 - 转发请求到讯飞星火API，保护API密钥",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.16.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "cloudbase",
+    "ai",
+    "proxy",
+    "spark"
+  ],
+  "author": "",
+  "license": "MIT"
+}

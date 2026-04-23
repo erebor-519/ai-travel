@@ -7,6 +7,7 @@ import extractKeyPlacesPrompt from './extract-key-places-prompt.md?raw';
 import filterKeyPlacesPrompt from './filter-key-places-prompt.md?raw';
 import extractPlacesCitiesPrompt from './extract-places-cities-prompt.md?raw';
 import preliminaryPlanPrompt from './preliminary-plan-prompt.md?raw';
+import { cloudbase } from '../../utils/cloudbase.js';
 
 class AMapService {
   constructor() {
@@ -21,6 +22,41 @@ class AMapService {
       window._AMapSecurityConfig = {
         securityJsCode: '49b1e1860ca6fe3ce62911c2ce619345',
       };
+    }
+  }
+
+  // 通过CloudBase云函数调用AI（密钥存放在云端，不暴露给前端）
+  async callAI(messages, options = {}) {
+    const {
+      model = 'astron-code-latest',
+      temperature = 0.7,
+      max_completion_tokens = 4096,
+      top_p = 0.95,
+      frequency_penalty = 0
+    } = options;
+
+    try {
+      const result = await cloudbase.callFunction({
+        name: 'ai-proxy',
+        data: {
+          action: 'chat',
+          messages,
+          model,
+          temperature,
+          max_tokens: max_completion_tokens,
+          stream: false
+        }
+      });
+
+      const resData = result.result;
+      if (!resData || resData.code !== 200) {
+        throw new Error(resData?.message || '云函数调用失败');
+      }
+
+      return resData.data;
+    } catch (error) {
+      console.error('callAI error:', error);
+      throw error;
     }
   }
 
@@ -319,39 +355,11 @@ class AMapService {
   // 从用户输入提取城市
   async extractCitiesFromInput(userInput) {
     try {
-      const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Failover-Enabled': 'true',
-          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              'role': 'system',
-              'content': extractCitiesFromInputPrompt
-            },
-            {
-              'role': 'user',
-              'content': userInput
-            }
-          ],
-          model: 'astron-code-latest',
-          stream: false,
-          max_completion_tokens: 512,
-          temperature: 0.3,
-          top_p: 0.95,
-          frequency_penalty: 0
-        })
-      });
+      const data = await this.callAI([
+        { role: 'system', content: extractCitiesFromInputPrompt },
+        { role: 'user', content: userInput }
+      ], { temperature: 0.3, max_completion_tokens: 512 });
 
-      if (!response.ok) {
-        console.warn('从输入提取城市失败');
-        return [];
-      }
-
-      const data = await response.json();
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
         try {
@@ -451,39 +459,11 @@ class AMapService {
   // 从用户输入提取关键地点
   async extractKeyPlacesFromInput(userInput) {
     try {
-      const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Failover-Enabled': 'true',
-          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              'role': 'system',
-              'content': extractKeyPlacesPrompt
-            },
-            {
-              'role': 'user',
-              'content': userInput
-            }
-          ],
-          model: 'astron-code-latest',
-          stream: false,
-          max_completion_tokens: 512,
-          temperature: 0.3,
-          top_p: 0.95,
-          frequency_penalty: 0
-        })
-      });
+      const data = await this.callAI([
+        { role: 'system', content: extractKeyPlacesPrompt },
+        { role: 'user', content: userInput }
+      ], { temperature: 0.3, max_completion_tokens: 512 });
 
-      if (!response.ok) {
-        console.warn('从输入提取关键地点失败');
-        return [];
-      }
-
-      const data = await response.json();
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
         // 按行分割，过滤空行
@@ -546,47 +526,18 @@ class AMapService {
   // 从搜索结果中筛选最符合的地点
   async filterKeyPlaces(searchResults, userInput) {
     try {
-      const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Failover-Enabled': 'true',
-          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              'role': 'system',
-              'content': filterKeyPlacesPrompt
-            },
-            {
-              'role': 'user',
-              'content': JSON.stringify({
-                userOriginalInput: userInput,
-                searchResults: searchResults.map(r => ({
-                  id: r.id,
-                  name: r.name,
-                  address: r.address,
-                  city: r.city
-                }))
-              })
-            }
-          ],
-          model: 'astron-code-latest',
-          stream: false,
-          max_completion_tokens: 512,
-          temperature: 0.3,
-          top_p: 0.95,
-          frequency_penalty: 0
-        })
-      });
-
-      if (!response.ok) {
-        console.warn('筛选地点失败');
-        return searchResults.slice(0, 6); // 返回前6个作为备选
-      }
-
-      const data = await response.json();
+      const data = await this.callAI([
+        { role: 'system', content: filterKeyPlacesPrompt },
+        { role: 'user', content: JSON.stringify({
+          userOriginalInput: userInput,
+          searchResults: searchResults.map(r => ({
+            id: r.id,
+            name: r.name,
+            address: r.address,
+            city: r.city
+          }))
+        })}
+      ], { temperature: 0.3, max_completion_tokens: 512 });
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
         const selectedIds = content.split('\n')
@@ -621,50 +572,21 @@ class AMapService {
       // 检查是否已取消
       if (isCancelledCallback()) return [];
       
-      const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Failover-Enabled': 'true',
-          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              'role': 'system',
-              'content': placeValidationPrompt
-            },
-            {
-              'role': 'user',
-              'content': JSON.stringify({
-                userOriginalInput: planText,
-                userPlan: planText,
-                results: geocodeResults.map(r => ({
-                  originalPlace: r.originalPlace,
-                  originalCity: r.originalCity,
-                  originalType: r.originalType,
-                  foundPlace: r.foundPlace,
-                  foundAddress: r.foundAddress,
-                  foundLocation: r.foundLocation
-                }))
-              })
-            }
-          ],
-          model: 'astron-code-latest',
-          stream: false,
-          max_completion_tokens: 1024,
-          temperature: 0.3,
-          top_p: 0.95,
-          frequency_penalty: 0
-        })
-      });
-
-      if (!response.ok) {
-        console.warn('地点验证请求失败，保留所有地点');
-        return geocodeResults;
-      }
-
-      const data = await response.json();
+      const data = await this.callAI([
+        { role: 'system', content: placeValidationPrompt },
+        { role: 'user', content: JSON.stringify({
+          userOriginalInput: planText,
+          userPlan: planText,
+          results: geocodeResults.map(r => ({
+            originalPlace: r.originalPlace,
+            originalCity: r.originalCity,
+            originalType: r.originalType,
+            foundPlace: r.foundPlace,
+            foundAddress: r.foundAddress,
+            foundLocation: r.foundLocation
+          }))
+        })}
+      ], { temperature: 0.3, max_completion_tokens: 1024 });
       console.log('地点验证响应:', data);
       
       if (data.choices && data.choices.length > 0) {
@@ -705,39 +627,11 @@ class AMapService {
   // 提取旅行计划中涉及的城市
   async extractCities(planText) {
     try {
-      const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Failover-Enabled': 'true',
-          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              'role': 'system',
-              'content': cityExtractionPrompt
-            },
-            {
-              'role': 'user',
-              'content': planText
-            }
-          ],
-          model: 'astron-code-latest',
-          stream: false,
-          max_completion_tokens: 512,
-          temperature: 0.3,
-          top_p: 0.95,
-          frequency_penalty: 0
-        })
-      });
+      const data = await this.callAI([
+        { role: 'system', content: cityExtractionPrompt },
+        { role: 'user', content: planText }
+      ], { temperature: 0.3, max_completion_tokens: 512 });
 
-      if (!response.ok) {
-        console.warn('提取城市失败，继续执行');
-        return [];
-      }
-
-      const data = await response.json();
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
         try {
@@ -766,39 +660,11 @@ class AMapService {
     
     // 直接调用大模型智能提取地点
     try {
-      // 使用fetch直接调用Vite代理
-      const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Failover-Enabled': 'true',
-          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              'role': 'system',
-              'content': placeExtractionPrompt
-            },
-            {
-              'role': 'user',
-              'content': `用户原始输入：${planText}\n\n涉及的城市：${cities.join('、')}\n\n请优先考虑用户原始输入，提取最重要的主要景点。`
-            }
-          ],
-          model: 'astron-code-latest',
-          stream: false,
-          max_completion_tokens: 1000,
-          temperature: 0.6,
-          top_p: 0.95,
-          frequency_penalty: 0
-        })
-      });
+      const data = await this.callAI([
+        { role: 'system', content: placeExtractionPrompt },
+        { role: 'user', content: `用户原始输入：${planText}\n\n涉及的城市：${cities.join('、')}\n\n请优先考虑用户原始输入，提取最重要的主要景点。` }
+      ], { temperature: 0.6, max_completion_tokens: 1000 });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
       console.log('大模型完整响应:', data);
       
       if (data.choices && data.choices.length > 0) {
@@ -1070,39 +936,11 @@ class AMapService {
   // 根据用户输入生成初步旅行计划
   async generatePreliminaryPlan(userInput) {
     try {
-      const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Failover-Enabled': 'true',
-          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              'role': 'system',
-              'content': preliminaryPlanPrompt
-            },
-            {
-              'role': 'user',
-              'content': userInput
-            }
-          ],
-          model: 'astron-code-latest',
-          stream: false,
-          max_completion_tokens: 1024,
-          temperature: 0.7,
-          top_p: 0.95,
-          frequency_penalty: 0
-        })
-      });
+      const data = await this.callAI([
+        { role: 'system', content: preliminaryPlanPrompt },
+        { role: 'user', content: userInput }
+      ], { temperature: 0.7, max_completion_tokens: 1024 });
 
-      if (!response.ok) {
-        console.warn('生成初步旅行计划失败');
-        return userInput; // 失败时返回原始输入
-      }
-
-      const data = await response.json();
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
         console.log('生成的初步旅行计划:', content);
@@ -1118,39 +956,11 @@ class AMapService {
   // 从初步旅行计划中提取地点和城市信息
   async extractPlacesAndCitiesFromInput(userInput) {
     try {
-      const response = await fetch('/api/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Failover-Enabled': 'true',
-          'Authorization': `Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm`
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              'role': 'system',
-              'content': extractPlacesCitiesPrompt
-            },
-            {
-              'role': 'user',
-              'content': userInput
-            }
-          ],
-          model: 'astron-code-latest',
-          stream: false,
-          max_completion_tokens: 1024,
-          temperature: 0.3,
-          top_p: 0.95,
-          frequency_penalty: 0
-        })
-      });
+      const data = await this.callAI([
+        { role: 'system', content: extractPlacesCitiesPrompt },
+        { role: 'user', content: userInput }
+      ], { temperature: 0.3, max_completion_tokens: 1024 });
 
-      if (!response.ok) {
-        console.warn('提取地点和城市信息失败');
-        return { places: [] };
-      }
-
-      const data = await response.json();
       if (data.choices && data.choices.length > 0) {
         let content = data.choices[0].message.content.trim();
         try {
