@@ -48,12 +48,11 @@ class AMapService {
         }
       });
 
-      const resData = result.result;
-      if (!resData || resData.code !== 200) {
-        throw new Error(resData?.message || '云函数调用失败');
+      if (!result || result.code !== 200) {
+        throw new Error(result?.message || '云函数调用失败');
       }
 
-      return resData.data;
+      return result.data;
     } catch (error) {
       console.error('callAI error:', error);
       throw error;
