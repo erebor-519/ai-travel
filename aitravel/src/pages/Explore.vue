@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import OpenAI from 'openai'
 import { forumService } from '../utils/forum.js'
+import { cloudbase } from '../utils/cloudbase.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -16,13 +16,24 @@ onMounted(() => {
   }
 })
 
-// AI 客户端配置
-const client = new OpenAI({
-  baseURL: window.location.origin + '/api',
-  apiKey: 'b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm',
-  defaultHeaders: { 'X-Failover-Enabled': 'true' },
-  dangerouslyAllowBrowser: true
-})
+// AI 辅助函数：通过CloudBase云函数调用
+const callAI = async (messages, options = {}) => {
+  const result = await cloudbase.callFunction({
+    name: 'ai-proxy',
+    data: {
+      action: 'chat',
+      messages,
+      model: options.model || 'astron-code-latest',
+      temperature: options.temperature || 0.7,
+      max_tokens: options.max_completion_tokens || 800,
+      stream: false
+    }
+  })
+  if (!result || result.code !== 200) {
+    throw new Error(result?.message || 'AI服务调用失败')
+  }
+  return result.data
+}
 
 // AI 对话系统提示
 const ai_system_prompt = `你是一个热情专业的旅行规划师。请为用户介绍目的地，包括：位置与特色、必游景点、最佳游览季节、推荐美食、交通方式。200字左右，内容精炼有趣。`
@@ -89,16 +100,10 @@ const handleSearch = async () => {
   
   try {
     // 1. 调用 AI 获取目的地介绍
-    const aiResponse = await client.chat.completions.create({
-      messages: [
-        { "role": "system", "content": ai_system_prompt },
-        { "role": "user", "content": `请介绍一下「${searchQuery.value}」` }
-      ],
-      model: "astron-code-latest",
-      stream: false,
-      max_completion_tokens: 800,
-      temperature: 0.7
-    })
+    const aiResponse = await callAI([
+      { role: 'system', content: ai_system_prompt },
+      { role: 'user', content: `请介绍一下「${searchQuery.value}」` }
+    ], { max_completion_tokens: 800, temperature: 0.7 })
     aiReply.value = aiResponse.choices[0].message.content.trim()
     
     // 2. 搜索相关帖子
@@ -144,16 +149,10 @@ const viewDestination = async (destination) => {
   destinationIntro.value = ''
   
   try {
-    const response = await client.chat.completions.create({
-      messages: [
-        { "role": "system", "content": ai_system_prompt },
-        { "role": "user", "content": `请介绍一下「${destination.name}」（位于${destination.location}）` }
-      ],
-      model: "astron-code-latest",
-      stream: false,
-      max_completion_tokens: 800,
-      temperature: 0.7
-    })
+    const response = await callAI([
+      { role: 'system', content: ai_system_prompt },
+      { role: 'user', content: `请介绍一下「${destination.name}」（位于${destination.location}）` }
+    ], { max_completion_tokens: 800, temperature: 0.7 })
     destinationIntro.value = response.choices[0].message.content.trim()
   } catch (error) {
     console.error('生成介绍失败:', error)

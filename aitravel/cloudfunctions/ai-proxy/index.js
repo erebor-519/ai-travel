@@ -25,19 +25,23 @@ exports.main = async (event, context) => {
 }
 
 async function handleChat(event) {
-  const { messages, model, temperature, max_tokens, stream } = event
+  const { messages, model, temperature, max_tokens, top_p, frequency_penalty, stream } = event
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return { code: 400, message: 'messages参数不能为空' }
   }
 
   const requestBody = {
-    model: model || '4.0Ultra',
+    model: model || 'astron-code-latest',
     messages,
     temperature: temperature || 0.7,
-    max_tokens: max_tokens || 4096,
+    max_completion_tokens: max_tokens || 4096,
+    top_p: top_p || 0.95,
+    frequency_penalty: frequency_penalty || 0,
     stream: false
   }
+
+  console.log('Calling Spark API, model:', requestBody.model, 'messages:', messages.length)
 
   const response = await fetch(SPARK_API_URL, {
     method: 'POST',
@@ -56,5 +60,6 @@ async function handleChat(event) {
   }
 
   const data = await response.json()
+  console.log('Spark API success, tokens used:', data.usage?.total_tokens)
   return { code: 200, data }
 }

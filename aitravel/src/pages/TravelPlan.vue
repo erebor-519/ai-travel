@@ -1,11 +1,11 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import OpenAI from 'openai'
 import AMapService from '../features/map/amap.service.js'
 import generateFinalPlanPrompt from '../features/map/generate-final-plan-prompt.md?raw'
 import LoginModal from '../components/LoginModal.vue'
 import { travelPlanService } from '../utils/travelPlan.js'
+import { cloudbase } from '../utils/cloudbase.js'
 
 window._AMapSecurityConfig = {
   securityJsCode: '49b1e1860ca6fe3ce62911c2ce619345',
@@ -117,13 +117,6 @@ const saveTravelPlan = async () => {
 }
 
 
-
-const client = new OpenAI({
-  baseURL: window.location.origin + '/api',
-  apiKey: 'b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm',
-  defaultHeaders: { 'X-Failover-Enabled': 'true' },
-  dangerouslyAllowBrowser: true
-})
 
 const generateTravelPlan = async () => {
   if (!travelInput.value.trim()) {
@@ -264,34 +257,41 @@ const generateTravelPlan = async () => {
       city: poi.city
     }))
 
-    const response = await client.chat.completions.create({
-      messages: [
-        {
-          "role": "system",
-          "content": generateFinalPlanPrompt
-        },
-        {
-          "role": "user",
-          "content": JSON.stringify({
-            userOriginalInput: travelInput.value,
-            preliminaryPlan: preliminaryPlan,
-            userExtractedPlaces: placesAndCities.places,
-            availablePOIs: poisForLLM
-          })
-        }
-      ],
-      model: "astron-code-latest",
-      stream: false,
-      max_completion_tokens: 2000,
-      temperature: 0.7,
-      top_p: 0.95,
-      frequency_penalty: 0,
-      signal: abortController.signal
+    const response = await cloudbase.callFunction({
+      name: 'ai-proxy',
+      data: {
+        action: 'chat',
+        messages: [
+          {
+            role: 'system',
+            content: generateFinalPlanPrompt
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              userOriginalInput: travelInput.value,
+              preliminaryPlan: preliminaryPlan,
+              userExtractedPlaces: placesAndCities.places,
+              availablePOIs: poisForLLM
+            })
+          }
+        ],
+        model: 'astron-code-latest',
+        temperature: 0.7,
+        max_tokens: 2000,
+        stream: false
+      }
     })
+
+    if (!response || response.code !== 200) {
+      throw new Error(response?.message || 'AI服务调用失败')
+    }
+
+    const responseData = response.data
 
     if (isCancelled) return
 
-    const planContent = response.choices[0].message.content.trim()
+    const planContent = responseData.choices[0].message.content.trim()
     
     // 在显示时去掉经纬度信息部分，但保留完整内容用于路径规划
     const separatorIndex = planContent.indexOf('---')

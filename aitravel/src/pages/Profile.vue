@@ -150,7 +150,7 @@ onMounted(() => {
     <!-- 用户操作 -->
     <div class="profile-actions">
       <button class="action-btn primary" @click="goToTravelPlan">
-        ✈️ 发布旅行规划
+        ✈️开始旅行规划
       </button>
     </div>
 
