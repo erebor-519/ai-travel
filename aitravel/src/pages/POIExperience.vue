@@ -53,7 +53,7 @@ const newPost = ref({
   content: '',
   tags: [],
   location: '',
-  days: 1,
+  days: '',
   budget: '',
   places: [],  // 保存地点数组用于显示路线
   images: []   // 保存上传的图片URL
@@ -301,7 +301,7 @@ const openCreatePostModal = () => {
     content: '',
     tags: [],
     location: '',
-    days: 1,
+    days: '',
     budget: '',
     places: [],
     images: []
@@ -459,7 +459,7 @@ const submitPost = async () => {
       content: newPost.value.content,
       tags: JSON.parse(JSON.stringify(newPost.value.tags || [])),
       location: newPost.value.location || '',
-      days: newPost.value.days || 1,
+      days: newPost.value.days || '',
       budget: newPost.value.budget || '',
       places: JSON.parse(JSON.stringify(newPost.value.places || [])),
       images: JSON.parse(JSON.stringify(uploadedImages.value))
@@ -526,8 +526,12 @@ const formatTime = (timeString) => {
 }
 
 // 图片预览
+const previewImageUrl = ref(null)
 const previewImage = (url) => {
-  window.open(url, '_blank')
+  previewImageUrl.value = url
+}
+const closePreview = () => {
+  previewImageUrl.value = null
 }
 
 // 初始化
@@ -796,16 +800,13 @@ onMounted(() => {
               <!-- 天数 -->
               <div class="form-group">
                 <label for="days">旅行天数</label>
-                <select id="days" v-model="newPost.days">
-                  <option value="1">1天</option>
-                  <option value="2">2天</option>
-                  <option value="3">3天</option>
-                  <option value="4">4天</option>
-                  <option value="5">5天</option>
-                  <option value="6">6天</option>
-                  <option value="7">7天</option>
-                  <option value="8">8天以上</option>
-                </select>
+                <input
+                  id="days"
+                  v-model="newPost.days"
+                  type="number"
+                  min="1"
+                  placeholder="输入天数（可选）"
+                />
               </div>
 
               <!-- 预算 -->
@@ -882,6 +883,16 @@ onMounted(() => {
               </div>
             </div>
           </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 图片预览模态框 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="previewImageUrl" class="image-preview-overlay" @click="closePreview">
+          <img :src="previewImageUrl" class="image-preview-img" @click.stop />
+          <button class="image-preview-close" @click="closePreview">&times;</button>
         </div>
       </Transition>
     </Teleport>
@@ -1259,6 +1270,64 @@ onMounted(() => {
 .post-image:hover {
   transform: scale(1.05);
   box-shadow: var(--shadow-md);
+  opacity: 0.9;
+}
+
+/* 图片预览模态框 */
+.image-preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  cursor: zoom-out;
+}
+
+.image-preview-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+
+.image-preview-close {
+  position: fixed;
+  top: 20px;
+  right: 28px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 40px;
+  cursor: pointer;
+  z-index: 100000;
+  line-height: 1;
+  transition: opacity 0.2s;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-preview-close:hover {
+  opacity: 0.7;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 /* 帖子操作栏 */

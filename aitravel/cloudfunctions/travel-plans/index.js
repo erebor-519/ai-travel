@@ -56,7 +56,7 @@ async function saveTravelPlan(event) {
       content: content || '',
       places: places || [],
       location: location || '',
-      days: days || 1,
+      days: days || null,
       budget: budget || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()

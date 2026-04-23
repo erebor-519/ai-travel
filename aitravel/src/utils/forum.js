@@ -29,7 +29,7 @@ class ForumService {
           content: postData.content,
           tags: postData.tags || [],
           location: postData.location || '',
-          days: postData.days || 1,
+          days: postData.days || '',
           budget: postData.budget || '',
           places: places,
           images: images
