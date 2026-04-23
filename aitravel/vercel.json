@@ -1,12 +1,17 @@
 {
+  "functions": {
+    "api/edge-proxy.js": {
+      "runtime": "@vercel/node@3.2.1"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/$1"
+      "destination": "/api/edge-proxy.js"
     },
     {
       "source": "/amap/(.*)",
-      "destination": "https://restapi.amap.com/$1"
+      "destination": "/api/edge-proxy.js"
     },
     {
       "source": "/(.*)",
