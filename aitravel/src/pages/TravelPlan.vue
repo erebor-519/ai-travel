@@ -74,6 +74,45 @@ let isCancelled = false  // 全局取消标志
 const amapService = AMapService
 
 // 保存旅行规划
+const openAmapNavigation = () => {
+  if (!savedPlaces.value || savedPlaces.value.length < 2) {
+    alert('请先生成旅行计划并确保有至少2个地点')
+    return
+  }
+  
+  const places = savedPlaces.value
+  
+  // 使用高德地图网页版的路径规划方式，支持更多途经点
+  let url = 'https://ditu.amap.com/dir?'
+  
+  // 添加起点
+  const start = places[0]
+  url += `from[name]=${encodeURIComponent(start.name)}&from[lnglat]=${start.location[0]},${start.location[1]}`
+  
+  // 添加终点
+  const end = places[places.length - 1]
+  url += `&to[name]=${encodeURIComponent(end.name)}&to[lnglat]=${end.location[0]},${end.location[1]}`
+  
+  // 添加所有途经点（除了起点和终点）
+  if (places.length > 2) {
+    const waypoints = places.slice(1, places.length - 1)
+    waypoints.forEach((p, index) => {
+      url += `&via[${index}][name]=${encodeURIComponent(p.name)}&via[${index}][lnglat]=${p.location[0]},${p.location[1]}`
+    })
+  }
+  
+  console.log('打开高德地图导航:', url)
+  console.log('地点数量:', places.length)
+  console.log('起点:', start.name, start.location)
+  console.log('终点:', end.name, end.location)
+  if (places.length > 2) {
+    const waypointList = places.slice(1, places.length - 1)
+    console.log('途经点:', waypointList.map(p => `${p.name} ${p.location}`))
+  }
+  
+  window.open(url, '_blank')
+}
+
 const saveTravelPlan = async () => {
   if (!planResult.value) {
     saveMessage.value = '请先生成旅行计划'
@@ -628,6 +667,9 @@ onBeforeUnmount(() => {
                 <button class="btn-primary" @click="saveTravelPlan" :disabled="isSaving">
                   {{ isSaving ? '保存中...' : '保存计划' }}
                 </button>
+                <button class="btn-amap" @click="openAmapNavigation" :disabled="!savedPlaces || savedPlaces.length < 2">
+                  在高德地图查看路线
+                </button>
               </div>
               <div class="save-tip">提示：您可以在地图上拖动途径点调整路线，保存时会保存您调整后的位置</div>
               <div v-if="saveMessage" class="save-message">{{ saveMessage }}</div>
@@ -935,6 +977,40 @@ onBeforeUnmount(() => {
 .btn-primary:disabled {
   background: var(--border-light);
   cursor: not-allowed;
+}
+
+.btn-amap {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: linear-gradient(135deg, #3284ff 0%, #1a73e8 100%);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-amap:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 115, 232, 0.3);
+}
+
+.btn-amap:disabled {
+  background: var(--border-light);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.plan-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
 }
 
 .error-message {
