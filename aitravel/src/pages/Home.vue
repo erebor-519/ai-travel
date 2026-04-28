@@ -49,7 +49,7 @@ const handleGeneratePlan = () => {
     <main class="main-content">
       <!-- 左侧地图区域 -->
       <section class="map-section">
-        <h2>目的地地图</h2>
+        <h2>地图</h2>
         <div class="map-wrapper">
           <MapView 
             :center="[116.397428, 39.90923]" 

@@ -8,7 +8,7 @@ import { travelPlanService } from '../utils/travelPlan.js'
 import { cloudbase } from '../utils/cloudbase.js'
 
 window._AMapSecurityConfig = {
-  securityJsCode: '49b1e1860ca6fe3ce62911c2ce619345',
+  securityJsCode: import.meta.env.VITE_AMAP_SECURITY_JS_CODE || '49b1e1860ca6fe3ce62911c2ce619345',
 }
 
 // 用户登录状态
@@ -66,6 +66,18 @@ const leftPanelCollapsed = ref(false)
 const savedPlaces = ref([])  // 保存拖动后的地点
 const isSaving = ref(false)
 const saveMessage = ref('')
+// 进度状态
+const progressSteps = ref([
+  { id: 0, name: '生成初步计划', active: false, completed: false },
+  { id: 1, name: '提取地点信息', active: false, completed: false },
+  { id: 2, name: '验证城市信息', active: false, completed: false },
+  { id: 3, name: '搜索POI地点', active: false, completed: false },
+  { id: 4, name: '生成详细计划', active: false, completed: false },
+  { id: 5, name: '加载地图路线', active: false, completed: false }
+])
+const currentStep = ref(0)
+const totalSteps = ref(6)
+const progressPercentage = ref(0)
 let originalBodyStyle = ''
 let currentDragRoute = null
 let abortController = null
@@ -170,6 +182,9 @@ const generateTravelPlan = async () => {
   isCancelled = false  // 重置取消标志
   savedPlaces.value = [] // 重置保存的地点
   
+  // 重置进度状态
+  resetProgress()
+  
   // 创建 AbortController 用于取消请求
   abortController = new AbortController()
   
@@ -181,7 +196,7 @@ const generateTravelPlan = async () => {
     }
     currentDragRoute = null
   }
-  
+
   if (window.currentMap) {
     try {
       window.currentMap.clearMap()
@@ -193,14 +208,18 @@ const generateTravelPlan = async () => {
   try {
     // 第0步：根据用户输入生成初步旅行计划
     console.log('第0步：生成初步旅行计划...')
+    updateProgress(0, 'active')
     const preliminaryPlan = await amapService.generatePreliminaryPlan(travelInput.value)
+    updateProgress(0, 'completed')
     
     if (isCancelled) return
     console.log('初步旅行计划:', preliminaryPlan)
 
     // 第一步：从初步旅行计划中提取地点和城市信息
     console.log('第一步：从初步计划中提取地点和城市信息...')
+    updateProgress(1, 'active')
     const placesAndCities = await amapService.extractPlacesAndCitiesFromInput(preliminaryPlan)
+    updateProgress(1, 'completed')
     
     if (isCancelled) return
     
@@ -214,6 +233,7 @@ const generateTravelPlan = async () => {
 
     // 第二步：对城市名用关键字搜索，用搜索结果的cityname替换原来的城市名
     console.log('第二步：验证城市并用高德城市替代...')
+    updateProgress(2, 'active')
     const cities = [...new Set(placesAndCities.places.map(p => p.city).filter(city => city))]
     
     // 用于存储城市映射：原始城市名 -> 高德城市名
@@ -261,9 +281,11 @@ const generateTravelPlan = async () => {
       return placeObj
     })
     console.log('更新后的地点和城市:', placesAndCities)
+    updateProgress(2, 'completed')
 
     // 第三步：对每个地点在其城市下进行关键字搜索，返回前10个结果
     console.log('第三步：在城市内关键字搜索...')
+    updateProgress(3, 'active')
     let allSearchResults = []
     for (let i = 0; i < placesAndCities.places.length; i++) {
       if (isCancelled) return
@@ -285,9 +307,11 @@ const generateTravelPlan = async () => {
     // 合并城市POI和关键字搜索结果
     let combinedResults = [...cityPOIs, ...allSearchResults]
     console.log(`合并后共${combinedResults.length}个搜索结果`)
+    updateProgress(3, 'completed')
 
     // 第四步：调用大模型，根据用户输入、第一次输出和所有搜索结果筛选地点并生成旅行计划
     console.log('第四步：生成旅行计划...')
+    updateProgress(4, 'active')
     
     const poisForLLM = combinedResults.map(poi => ({
       name: poi.name,
@@ -339,9 +363,11 @@ const generateTravelPlan = async () => {
     } else {
       planResult.value = planContent
     }
+    updateProgress(4, 'completed')
 
     // 从计划中提取关键地点并显示地图
     console.log('解析关键地点并显示地图...')
+    updateProgress(5, 'active')
     const keyLocations = amapService.parseKeyLocationsFromPlan(planContent)
     
     if (keyLocations.length < 2) {
@@ -359,6 +385,7 @@ const generateTravelPlan = async () => {
       } else {
         errorMessage.value = '计划生成成功，但未能解析出足够的地点用于地图显示'
       }
+      updateProgress(5, 'completed')
       isLoading.value = false
       return
     }
@@ -366,6 +393,7 @@ const generateTravelPlan = async () => {
     savedPlaces.value = keyLocations
     showMap.value = true
     await showRouteOnMap(keyLocations)
+    updateProgress(5, 'completed')
 
   } catch (error) {
     // 检查是否是用户取消的请求
@@ -522,6 +550,42 @@ const initMap = async () => {
   }
 }
 
+// 更新进度状态
+const updateProgress = (stepId, status) => {
+  if (stepId >= 0 && stepId < progressSteps.value.length) {
+    if (status === 'active') {
+      // 激活当前步骤，之前的步骤标记为完成
+      progressSteps.value.forEach((step, index) => {
+        step.active = index === stepId
+        step.completed = index < stepId
+      })
+      currentStep.value = stepId
+      progressPercentage.value = Math.round((stepId + 1) / totalSteps.value * 100)
+    } else if (status === 'completed') {
+      // 标记步骤完成
+      if (stepId < progressSteps.value.length) {
+        progressSteps.value[stepId].completed = true
+      }
+      // 如果下一步存在，激活下一步
+      if (stepId + 1 < progressSteps.value.length) {
+        progressSteps.value[stepId + 1].active = true
+        currentStep.value = stepId + 1
+        progressPercentage.value = Math.round((stepId + 2) / totalSteps.value * 100)
+      }
+    }
+  }
+}
+
+// 重置进度状态
+const resetProgress = () => {
+  progressSteps.value.forEach(step => {
+    step.active = false
+    step.completed = false
+  })
+  currentStep.value = 0
+  progressPercentage.value = 0
+}
+
 onMounted(() => {
   originalBodyStyle = document.body.style.cssText
   document.body.style.margin = '0'
@@ -653,6 +717,36 @@ onBeforeUnmount(() => {
             {{ errorMessage }}
           </div>
           
+          <!-- 进度条 -->
+          <div v-if="isLoading" class="progress-section">
+            <div class="progress-info">
+              <div class="progress-stats">
+                <span class="step-count">步骤 {{ currentStep + 1 }} / {{ totalSteps }}</span>
+                <span class="progress-percentage">{{ progressPercentage }}%</span>
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill" :style="{ width: progressPercentage + '%' }"></div>
+              </div>
+              <div class="step-list">
+                <div 
+                  v-for="step in progressSteps" 
+                  :key="step.id" 
+                  class="step-item"
+                  :class="{ 
+                    'active': step.active, 
+                    'completed': step.completed 
+                  }"
+                >
+                  <div class="step-icon">
+                    <span v-if="step.completed">✓</span>
+                    <span v-else>{{ step.id + 1 }}</span>
+                  </div>
+                  <div class="step-name">{{ step.name }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
           <div v-if="planResult" class="plan-result">
             <h3>您的旅行计划</h3>
             
@@ -759,6 +853,7 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.2);
   font-weight: 600;
 }
+
 
 .user-menu {
   display: flex;
@@ -1074,6 +1169,105 @@ onBeforeUnmount(() => {
   color: #3498db;
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
+}
+
+/* 进度条样式 */
+.progress-section {
+  margin-bottom: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+}
+
+.progress-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.progress-stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.step-count {
+  font-weight: 500;
+}
+
+.progress-percentage {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.progress-bar {
+  height: 8px;
+  background: var(--border-light);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: var(--spacing-xs) 0;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.step-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  font-size: 12px;
+  transition: all 0.3s ease;
+}
+
+.step-item.active {
+  background: var(--primary-color);
+  color: white;
+}
+
+.step-item.completed {
+  background: #e8f5e9;
+  color: #27ae60;
+}
+
+.step-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.step-item.active .step-icon {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.step-item.completed .step-icon {
+  background: #27ae60;
+  color: white;
+}
+
+.step-name {
+  font-weight: 500;
 }
 
 .map-section {
