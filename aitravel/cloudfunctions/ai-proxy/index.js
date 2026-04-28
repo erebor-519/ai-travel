@@ -6,7 +6,7 @@ const app = cloudbase.init({
 
 // 讯飞星火API配置 - 密钥存放在云端，不暴露给前端
 const SPARK_API_URL = 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions'
-const SPARK_API_KEY = 'b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm'
+const SPARK_API_KEY = process.env.SPARK_API_KEY || 'b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm'
 
 exports.main = async (event, context) => {
   const { action } = event
@@ -47,7 +47,7 @@ async function handleChat(event) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm',
+      'Authorization': `Bearer ${SPARK_API_KEY}`,
       'X-Failover-Enabled': 'true'
     },
     body: JSON.stringify(requestBody)

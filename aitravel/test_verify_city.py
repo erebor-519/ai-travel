@@ -1,5 +1,10 @@
 import requests
 import json
+import os
+from dotenv import load_dotenv
+
+# 加载.env文件
+load_dotenv()
 
 def verify_city(city_name, limit=5):
     """验证城市名（不限制类型）"""
@@ -10,7 +15,7 @@ def verify_city(city_name, limit=5):
         "city": city_name,
         "offset": str(limit),
         "page": "1",
-        "key": "2ca47c5535532f4bb5134dc7af4dcb92"
+        "key": os.getenv('VITE_AMAP_SERVICE_KEY', '2ca47c5535532f4bb5134dc7af4dcb92')
     }
     
     try:

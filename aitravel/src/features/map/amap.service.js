@@ -14,13 +14,13 @@ class AMapService {
     this.map = null;
     this.loaded = false;
     this.loadPromise = null;
-    this.webKey = '2d2b4eba69cd250f810caedccec09db1'; // Web端key - 用于JavaScript API
-    this.serviceKey = '2ca47c5535532f4bb5134dc7af4dcb92'; // Web服务key - 用于地理编码、路径规划
+    this.webKey = import.meta.env.VITE_AMAP_WEB_KEY || '2d2b4eba69cd250f810caedccec09db1'; // Web端key - 用于JavaScript API
+    this.serviceKey = import.meta.env.VITE_AMAP_SERVICE_KEY || '2ca47c5535532f4bb5134dc7af4dcb92'; // Web服务key - 用于地理编码、路径规划
     
     // 设置安全密钥
     if (!window._AMapSecurityConfig) {
       window._AMapSecurityConfig = {
-        securityJsCode: '49b1e1860ca6fe3ce62911c2ce619345',
+        securityJsCode: import.meta.env.VITE_AMAP_SECURITY_JS_CODE || '49b1e1860ca6fe3ce62911c2ce619345',
       };
     }
   }

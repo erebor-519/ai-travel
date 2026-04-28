@@ -1,5 +1,10 @@
 import requests
 import json
+import os
+from dotenv import load_dotenv
+
+# 加载.env文件
+load_dotenv()
 
 def test_amap_city_search(city_name, keyword="景点"):
     """测试高德地图城市POI搜索"""
@@ -11,7 +16,7 @@ def test_amap_city_search(city_name, keyword="景点"):
         "types": "风景名胜区|风景名胜|景点|历史遗迹|博物馆|公园广场|观景点|文化场馆|公园|寺庙|教堂|古迹|古建筑|世界遗产",
         "offset": "10",  # 只返回前10个结果
         "page": "1",
-        "key": "2ca47c5535532f4bb5134dc7af4dcb92"
+        "key": os.getenv('VITE_AMAP_SERVICE_KEY', '2ca47c5535532f4bb5134dc7af4dcb92')
     }
     
     try:
@@ -62,13 +67,13 @@ def test_amap_city_search(city_name, keyword="景点"):
         print(f"\n请求失败: {e}")
         return []
 
-def test_geocode(address):
+  def test_geocode(address):
     """测试地理编码"""
     url = "https://restapi.amap.com/v3/geocode/geo"
     
     params = {
         "address": address,
-        "key": "2ca47c5535532f4bb5134dc7af4dcb92"
+        "key": os.getenv('VITE_AMAP_SERVICE_KEY', '2ca47c5535532f4bb5134dc7af4dcb92')
     }
     
     try:
