@@ -341,7 +341,7 @@ const generateTravelPlan = async () => {
         ],
         model: 'astron-code-latest',
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: 8000,
         stream: false
       }
     })
@@ -355,6 +355,7 @@ const generateTravelPlan = async () => {
     if (isCancelled) return
 
     const planContent = responseData.choices[0].message.content.trim()
+    console.log('大模型生成的完整旅行计划:', planContent)
     
     // 在显示时去掉经纬度信息部分，但保留完整内容用于路径规划
     const separatorIndex = planContent.indexOf('---')
@@ -369,6 +370,7 @@ const generateTravelPlan = async () => {
     console.log('解析关键地点并显示地图...')
     updateProgress(5, 'active')
     const keyLocations = amapService.parseKeyLocationsFromPlan(planContent)
+    console.log('解析出的关键地点:', keyLocations)
     
     if (keyLocations.length < 2) {
       console.warn('关键地点数量不足，尝试使用搜索结果中的地点生成路线')

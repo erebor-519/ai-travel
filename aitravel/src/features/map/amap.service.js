@@ -357,7 +357,7 @@ class AMapService {
       const data = await this.callAI([
         { role: 'system', content: extractCitiesFromInputPrompt },
         { role: 'user', content: userInput }
-      ], { temperature: 0.3, max_completion_tokens: 512 });
+      ], { temperature: 0.3, max_completion_tokens: 2000 });
 
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
@@ -461,7 +461,7 @@ class AMapService {
       const data = await this.callAI([
         { role: 'system', content: extractKeyPlacesPrompt },
         { role: 'user', content: userInput }
-      ], { temperature: 0.3, max_completion_tokens: 512 });
+      ], { temperature: 0.3, max_completion_tokens: 2000 });
 
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
@@ -536,7 +536,7 @@ class AMapService {
             city: r.city
           }))
         })}
-      ], { temperature: 0.3, max_completion_tokens: 512 });
+      ], { temperature: 0.3, max_completion_tokens: 2000 });
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
         const selectedIds = content.split('\n')
@@ -585,7 +585,7 @@ class AMapService {
             foundLocation: r.foundLocation
           }))
         })}
-      ], { temperature: 0.3, max_completion_tokens: 1024 });
+      ], { temperature: 0.3, max_completion_tokens: 2000 });
       console.log('地点验证响应:', data);
       
       if (data.choices && data.choices.length > 0) {
@@ -629,7 +629,7 @@ class AMapService {
       const data = await this.callAI([
         { role: 'system', content: cityExtractionPrompt },
         { role: 'user', content: planText }
-      ], { temperature: 0.3, max_completion_tokens: 512 });
+      ], { temperature: 0.3, max_completion_tokens: 2000 });
 
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
@@ -662,7 +662,7 @@ class AMapService {
       const data = await this.callAI([
         { role: 'system', content: placeExtractionPrompt },
         { role: 'user', content: `用户原始输入：${planText}\n\n涉及的城市：${cities.join('、')}\n\n请优先考虑用户原始输入，提取最重要的主要景点。` }
-      ], { temperature: 0.6, max_completion_tokens: 1000 });
+      ], { temperature: 0.6, max_completion_tokens: 2000 });
 
       console.log('大模型完整响应:', data);
       
@@ -938,7 +938,7 @@ class AMapService {
       const data = await this.callAI([
         { role: 'system', content: preliminaryPlanPrompt },
         { role: 'user', content: userInput }
-      ], { temperature: 0.7, max_completion_tokens: 1024 });
+      ], { temperature: 0.7, max_completion_tokens: 2000 });
 
       if (data.choices && data.choices.length > 0) {
         const content = data.choices[0].message.content.trim();
@@ -958,10 +958,11 @@ class AMapService {
       const data = await this.callAI([
         { role: 'system', content: extractPlacesCitiesPrompt },
         { role: 'user', content: userInput }
-      ], { temperature: 0.3, max_completion_tokens: 1024 });
+      ], { temperature: 0.1, max_completion_tokens: 2000 });
 
       if (data.choices && data.choices.length > 0) {
         let content = data.choices[0].message.content.trim();
+        console.log('大模型识别的城市信息原始输出:', content);
         try {
           // 清理markdown代码块标记
           if (content.startsWith('```json') || content.startsWith('```')) {
