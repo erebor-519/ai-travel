@@ -224,7 +224,7 @@ const generateTravelPlan = async () => {
     if (isCancelled) return
     
     if (!placesAndCities || !placesAndCities.places || placesAndCities.places.length === 0) {
-      errorMessage.value = '未能从您的输入中识别出地点，请更明确地提及地点名称'
+      errorMessage.value = '未能从您的输入中识别出地点，AI尝试了多次仍未成功，请更明确地提及地点名称（如：北京故宫、上海外滩等）'
       isLoading.value = false
       return
     }

@@ -35,28 +35,47 @@ class AMapService {
       frequency_penalty = 0
     } = options;
 
-    try {
-      const result = await cloudbase.callFunction({
-        name: 'ai-proxy',
-        data: {
-          action: 'chat',
-          messages,
-          model,
-          temperature,
-          max_tokens: max_completion_tokens,
-          stream: false
+    const maxRetries = 3;
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`callAI 第${attempt}次尝试...`);
+        const result = await cloudbase.callFunction({
+          name: 'ai-proxy',
+          data: {
+            action: 'chat',
+            messages,
+            model,
+            temperature,
+            max_tokens: max_completion_tokens,
+            top_p,
+            frequency_penalty,
+            stream: false
+          }
+        });
+
+        if (!result || result.code !== 200) {
+          throw new Error(result?.message || '云函数调用失败');
         }
-      });
 
-      if (!result || result.code !== 200) {
-        throw new Error(result?.message || '云函数调用失败');
+        console.log(`callAI 第${attempt}次尝试成功`);
+        return result.data;
+      } catch (error) {
+        console.error(`callAI 第${attempt}次尝试失败:`, error);
+        lastError = error;
+        
+        // 如果不是最后一次尝试，等待一段时间后重试
+        if (attempt < maxRetries) {
+          const delayMs = 500 * attempt; // 指数退避
+          console.log(`等待${delayMs}ms后重试...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
       }
-
-      return result.data;
-    } catch (error) {
-      console.error('callAI error:', error);
-      throw error;
     }
+    
+    // 所有尝试都失败
+    throw lastError || new Error('AI调用失败，已达到最大重试次数');
   }
 
   // 加载高德地图SDK
@@ -952,40 +971,123 @@ class AMapService {
     }
   }
 
-  // 从初步旅行计划中提取地点和城市信息
+  // 从初步旅行计划中提取地点和城市信息，如果没有输出则重试直到有输出
   async extractPlacesAndCitiesFromInput(userInput) {
-    try {
-      const data = await this.callAI([
-        { role: 'system', content: extractPlacesCitiesPrompt },
-        { role: 'user', content: userInput }
-      ], { temperature: 0.1, max_completion_tokens: 2000 });
+    const maxRetries = 5; // 最多重试5次
+    let retryCount = 0;
+    let lastError = null;
 
-      if (data.choices && data.choices.length > 0) {
-        let content = data.choices[0].message.content.trim();
-        console.log('大模型识别的城市信息原始输出:', content);
-        try {
-          // 清理markdown代码块标记
-          if (content.startsWith('```json') || content.startsWith('```')) {
-            content = content.replace(/^```json\s*/, '').replace(/^```\s*/, '');
-          }
-          if (content.endsWith('```')) {
-            content = content.replace(/\s*```$/, '');
-          }
-          content = content.trim();
-          
-          const result = JSON.parse(content);
-          console.log('从初步计划提取到的地点和城市:', result);
-          return result;
-        } catch (parseError) {
-          console.warn('解析地点和城市信息失败:', parseError);
-          return { places: [] };
+    while (retryCount < maxRetries) {
+      try {
+        console.log(`第${retryCount + 1}次尝试提取地点和城市信息...`);
+        
+        // 随着重试次数增加，调整温度以提高输出多样性
+        const temperature = Math.min(0.1 + retryCount * 0.2, 0.9); // 从0.1逐渐增加到0.9
+        
+        // 根据重试次数调整提示词，增加明确的指导
+        let adjustedPrompt = extractPlacesCitiesPrompt;
+        if (retryCount > 0) {
+          adjustedPrompt = extractPlacesCitiesPrompt + "\n\n注意：请确保输出有效的JSON格式，并且包含至少1个地点信息。如果无法识别地点，请根据上下文推断可能的旅行地点。";
         }
+        if (retryCount > 1) {
+          adjustedPrompt = extractPlacesCitiesPrompt + "\n\n重要：请仔细分析用户输入，提取所有可能的旅行地点。即使不明确提到城市，也要根据常识推断城市信息。必须返回有效的JSON，不能为空。";
+        }
+        
+        const data = await this.callAI([
+          { role: 'system', content: adjustedPrompt },
+          { role: 'user', content: userInput }
+        ], { temperature: temperature, max_completion_tokens: 2000 });
+
+        if (data.choices && data.choices.length > 0) {
+          let content = data.choices[0].message.content.trim();
+          console.log('大模型识别的城市信息原始输出:', content);
+          
+          // 检查是否为空输出或无效内容
+          if (!content || content.length < 5 || content === '{}' || content === '{"places": []}' || content === '{"places":[]}' || content.includes('no places found') || content.includes('无法识别')) {
+            console.log('模型输出为空或无效，准备重试...');
+            retryCount++;
+            // 重试前增加延迟，让模型有时间重新思考
+            await new Promise(resolve => setTimeout(resolve, 800));
+            continue;
+          }
+          
+          try {
+            // 清理markdown代码块标记
+            if (content.startsWith('```json') || content.startsWith('```')) {
+              content = content.replace(/^```json\s*/, '').replace(/^```\s*/, '');
+            }
+            if (content.endsWith('```')) {
+              content = content.replace(/\s*```$/, '');
+            }
+            content = content.trim();
+            
+            // 尝试修复常见的JSON格式问题
+            // 1. 处理可能的尾部逗号
+            content = content.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+            // 2. 确保字符串用双引号
+            content = content.replace(/'/g, '"');
+            
+            const result = JSON.parse(content);
+            
+            // 验证结果是否有有效的地点
+            if (!result.places || !Array.isArray(result.places) || result.places.length === 0) {
+              console.log('解析出的地点列表为空，准备重试...');
+              retryCount++;
+              await new Promise(resolve => setTimeout(resolve, 800));
+              continue;
+            }
+            
+            // 验证每个地点都有place和city字段
+            const validPlaces = result.places.filter(place => 
+              place && place.place && place.city && 
+              typeof place.place === 'string' && 
+              typeof place.city === 'string' &&
+              place.place.trim() !== '' && 
+              place.city.trim() !== ''
+            );
+            
+            if (validPlaces.length === 0) {
+              console.log('所有地点数据无效，准备重试...');
+              retryCount++;
+              await new Promise(resolve => setTimeout(resolve, 800));
+              continue;
+            }
+            
+            // 如果有些地点无效，但至少有一个有效，使用有效的部分
+            if (validPlaces.length < result.places.length) {
+              console.log(`过滤无效地点: ${result.places.length} -> ${validPlaces.length}`);
+              result.places = validPlaces;
+            }
+            
+            console.log('从初步计划提取到的地点和城市:', result);
+            return result;
+          } catch (parseError) {
+            console.warn('解析地点和城市信息失败:', parseError);
+            console.warn('原始内容:', content);
+            lastError = parseError;
+            retryCount++;
+            // 重试前增加延迟
+            await new Promise(resolve => setTimeout(resolve, 800));
+            continue;
+          }
+        } else {
+          console.log('大模型没有返回有效choices，准备重试...');
+          retryCount++;
+          await new Promise(resolve => setTimeout(resolve, 800));
+          continue;
+        }
+      } catch (error) {
+        console.warn('提取地点和城市信息失败:', error);
+        lastError = error;
+        retryCount++;
+        await new Promise(resolve => setTimeout(resolve, 800));
+        continue;
       }
-      return { places: [] };
-    } catch (error) {
-      console.warn('提取地点和城市信息失败，继续执行:', error);
-      return { places: [] };
     }
+    
+    // 如果达到最大重试次数
+    console.warn(`达到最大重试次数(${maxRetries})，提取地点和城市信息失败，最后错误:`, lastError);
+    return { places: [] };
   }
 
   // 验证城市名，返回该城市的POI（不限制类型）
