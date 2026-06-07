@@ -1,12 +1,14 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { authService } from '../utils/auth.js'
 import { forumService } from '../utils/forum.js'
 import { travelPlanService } from '../utils/travelPlan.js'
 import { cloudbase } from '../utils/cloudbase.js'
 import LoginModal from '../components/LoginModal.vue'
 
+const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 
@@ -70,10 +72,10 @@ const isUploading = ref(false)  // 是否正在上传图片
 const sortBy = ref('createdAt')
 const sortOrder = ref('desc')
 const sortOptions = [
-  { value: 'createdAt', label: '最新发布' },
-  { value: 'likeCount', label: '最多点赞' },
-  { value: 'my', label: '我发布的' },
-  { value: 'mylikes', label: '我点赞的' }
+  { value: 'createdAt', label: 'latestPosts' },
+  { value: 'likeCount', label: 'mostLiked' },
+  { value: 'my', label: 'myPosts' },
+  { value: 'mylikes', label: 'myLikes' }
 ]
 
 // 检查登录状态
@@ -118,7 +120,7 @@ const loadPosts = async () => {
     if (sortBy.value === 'my') {
       // 我发布的
       if (!isLoggedIn.value) {
-        errorMessage.value = '请先登录'
+        errorMessage.value = t('footmarks.pleaseLogin')
         isLoading.value = false
         posts.value = []
         return
@@ -130,7 +132,7 @@ const loadPosts = async () => {
     } else if (sortBy.value === 'mylikes') {
       // 我点赞的
       if (!isLoggedIn.value) {
-        errorMessage.value = '请先登录'
+        errorMessage.value = t('footmarks.pleaseLogin')
         isLoading.value = false
         posts.value = []
         return
@@ -158,11 +160,11 @@ const loadPosts = async () => {
         totalPages: 0
       }
     } else {
-      errorMessage.value = result.message || '加载帖子失败'
+      errorMessage.value = result.message || t('footmarks.loadFailed')
     }
   } catch (error) {
     console.error('加载帖子失败:', error)
-    errorMessage.value = '加载帖子失败，请稍后重试'
+    errorMessage.value = t('footmarks.loadFailed') + '，' + t('common.search')
   } finally {
     isLoading.value = false
   }
@@ -193,11 +195,11 @@ const searchPosts = async () => {
         totalPages: 0
       }
     } else {
-      errorMessage.value = result.message || '搜索失败'
+      errorMessage.value = result.message || t('footmarks.searchFailed')
     }
   } catch (error) {
     console.error('搜索帖子失败:', error)
-    errorMessage.value = '搜索失败，请稍后重试'
+    errorMessage.value = t('footmarks.searchFailed')
   } finally {
     isLoading.value = false
   }
@@ -260,11 +262,11 @@ const handleLike = async (post) => {
         posts.value[index].likeCount = result.data.likeCount
       }
     } else {
-      alert(result.message || '操作失败')
+      alert(result.message || t('footmarks.operationFailed'))
     }
   } catch (error) {
     console.error('点赞失败:', error)
-    alert('操作失败，请稍后重试')
+    alert(t('footmarks.operationFailedRetry'))
   } finally {
     // 释放锁定
     likingPostId.value = null
@@ -339,7 +341,7 @@ const selectPlan = (plan) => {
   newPost.value.places = plan.places || []
   
   showPlanSelector.value = false
-  alert('旅行规划已导入！')
+  alert(t('footmarks.importSuccess'))
 }
 
 // 关闭发帖弹窗
@@ -566,7 +568,7 @@ onMounted(() => {
           <div class="sort-options">
             <select v-model="sortBy" @change="changeSort({ value: sortBy, label: sortOptions.find(o => o.value === sortBy)?.label })">
               <option v-for="option in sortOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
+                {{ t('footmarks.' + option.label) }}
               </option>
             </select>
           </div>
@@ -575,16 +577,16 @@ onMounted(() => {
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="搜索帖子..."
+              :placeholder="t('footmarks.searchPlaceholder')"
               @keyup.enter="searchPosts"
             />
             <button v-if="searchQuery" class="clear-search" @click="clearSearch">×</button>
-            <button class="search-btn" @click="searchPosts">搜索</button>
+            <button class="search-btn" @click="searchPosts">{{ t('footmarks.search') }}</button>
           </div>
-          <span v-if="isSearching" class="search-hint">搜索结果: {{ pagination.total }} 条</span>
+          <span v-if="isSearching" class="search-hint">{{ t('footmarks.search') }}结果: {{ pagination.total }} 条</span>
         </div>
         <button class="create-post-btn" @click="openCreatePostModal">
-          ✏️ 发布足迹
+          ✏️ {{ t('footmarks.createPost') }}
         </button>
       </div>
 
@@ -597,14 +599,14 @@ onMounted(() => {
       <!-- 加载状态 -->
       <div v-if="isLoading" class="loading-container">
         <div class="loading-spinner"></div>
-        <p>正在加载帖子...</p>
+        <p>{{ t('common.loading') }}</p>
       </div>
 
       <!-- 帖子列表 -->
       <div v-else class="posts-list">
         <!-- 无帖子提示 -->
         <div v-if="posts.length === 0" class="no-posts">
-          <p>还没有帖子，快来分享你的旅行规划吧！</p>
+          <p>{{ t('footmarks.noPosts') }}</p>
         </div>
 
         <!-- 帖子卡片 -->
@@ -670,7 +672,7 @@ onMounted(() => {
               class="expand-btn"
               @click="toggleExpand(post, $event)"
             >
-              {{ isExpanded(post) ? '▲ 收起' : '▼ 展开' }}
+              {{ isExpanded(post) ? '▲ ' + t('footmarks.collapse') : '▼ ' + t('footmarks.expand') }}
             </button>
             
             <!-- 显示路线按钮（如果有路线数据） -->
@@ -679,7 +681,7 @@ onMounted(() => {
               class="route-btn"
               @click="showRoute(post)"
             >
-              🗺️ 显示路线
+              🗺️ {{ t('footmarks.showRoute') }}
             </button>
             
             <!-- 删除按钮（仅帖子作者可见） -->
@@ -688,7 +690,7 @@ onMounted(() => {
               class="delete-btn"
               @click="handleDeletePost(post)"
             >
-              🗑️ 删除
+              🗑️ {{ t('footmarks.delete') }}
             </button>
           </div>
         </div>

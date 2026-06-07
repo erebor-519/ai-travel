@@ -1,8 +1,10 @@
 <script setup>
 import MapView from '../features/map/MapView.vue'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 
+const { t, locale } = useI18n()
 const mapLoaded = ref(false)
 const mapError = ref(null)
 const router = useRouter()
@@ -18,11 +20,11 @@ const handleMapError = (error) => {
   mapError.value = error.message
 }
 
-const destinations = [
-  { name: '北京', description: '历史文化名城', icon: '🏛️' },
-  { name: '上海', description: '现代都市风情', icon: '🌆' },
-  { name: '成都', description: '美食休闲之都', icon: '🍲' }
-]
+const destinations = computed(() => [
+  { name: t('home.destinations.beijing'), description: t('home.destinations.beijingDesc'), icon: '🏛️' },
+  { name: t('home.destinations.shanghai'), description: t('home.destinations.shanghaiDesc'), icon: '🌆' },
+  { name: t('home.destinations.chengdu'), description: t('home.destinations.chengduDesc'), icon: '🍲' }
+])
 
 const handleDestinationClick = (dest) => {
   router.push({ 
@@ -38,7 +40,7 @@ const handleGeneratePlan = () => {
       query: { input: encodeURIComponent(travelInput.value) } 
     })
   } else {
-    alert('请输入旅行需求')
+    alert(t('common.pleaseEnter'))
   }
 }
 </script>
@@ -49,7 +51,7 @@ const handleGeneratePlan = () => {
     <main class="main-content">
       <!-- 左侧地图区域 -->
       <section class="map-section">
-        <h2>地图</h2>
+        <h2>{{ t('common.map') }}</h2>
         <div class="map-wrapper">
           <MapView 
             :center="[116.397428, 39.90923]" 
@@ -66,9 +68,9 @@ const handleGeneratePlan = () => {
 
       <!-- 右侧AI助手区域 -->
       <section class="ai-section">
-        <h2>AI 旅行推荐</h2>
+        <h2>{{ t('common.aiRecommend') }}</h2>
         <div class="ai-card">
-          <h3>目的地推荐</h3>
+          <h3>{{ t('common.destinationRecommend') }}</h3>
 
           <ul class="destination-list">
             <li v-for="(dest, index) in destinations" :key="index" class="destination-item" @click="handleDestinationClick(dest)">
@@ -82,16 +84,16 @@ const handleGeneratePlan = () => {
         </div>
         
         <div class="ai-card">
-          <h3>旅行规划助手</h3>
-          <p>输入您的旅行需求，生成个性化旅行计划</p>
+          <h3>{{ t('common.travelPlanner') }}</h3>
+          <p>{{ t('home.description') }}</p>
           <input 
             v-model="travelInput"
             type="text" 
-            placeholder="例如：北京5日游，喜欢历史文化" 
+            :placeholder="locale === 'zh-CN' ? '例如：北京5日游，喜欢历史文化' : 'e.g.: 5-day tour in Beijing, interested in history and culture'"
             class="travel-input" 
           />
           <button class="generate-btn" @click="handleGeneratePlan">
-            生成计划
+            {{ t('common.generatePlan') }}
           </button>
         </div>
       </section>

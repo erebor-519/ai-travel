@@ -1,6 +1,15 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import LoginModal from './components/LoginModal.vue'
+
+const { t, locale } = useI18n()
+
+// 语言切换
+const switchLanguage = (lang) => {
+  locale.value = lang
+  localStorage.setItem('locale', lang)
+}
 
 // 用户登录状态
 const isLoggedIn = ref(false)
@@ -58,23 +67,27 @@ const handleLogin = (user) => {
   <div class="app-container">
     <!-- 头部导航 -->
     <header class="header">
-      <h1>AI 智能旅行助手</h1>
+      <h1>{{ t('home.title') }}</h1>
       <nav>
         <ul>
           <li>
-            <router-link to="/">首页</router-link>
+            <router-link to="/">{{ t('nav.home') }}</router-link>
           </li>
           <li>
-            <router-link to="/explore">探索</router-link>
+            <router-link to="/explore">{{ t('nav.explore') }}</router-link>
           </li>
           <li>
-            <router-link to="/poi-experience">足迹</router-link>
+            <router-link to="/poi-experience">{{ t('nav.footmarks') }}</router-link>
           </li>
           <li>
-            <router-link to="/travel-plan">规划</router-link>
+            <router-link to="/travel-plan">{{ t('nav.plan') }}</router-link>
+          </li>
+          <li class="lang-switch">
+            <button @click="switchLanguage('zh-CN')" :class="{ active: locale === 'zh-CN' }">中</button>
+            <button @click="switchLanguage('en-US')" :class="{ active: locale === 'en-US' }">EN</button>
           </li>
           <li v-if="!isLoggedIn">
-            <a href="#" @click.prevent="openLoginModal">登录</a>
+            <a href="#" @click.prevent="openLoginModal">{{ t('common.login') }}</a>
           </li>
           <li v-else class="user-menu">
             <router-link to="/profile" class="user-info">
@@ -159,6 +172,31 @@ const handleLogin = (user) => {
 .header nav router-link.active {
   background: rgba(255, 255, 255, 0.2);
   font-weight: 600;
+}
+
+.lang-switch {
+  display: flex;
+  gap: 4px;
+}
+
+.lang-switch button {
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: var(--text-white);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.lang-switch button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.lang-switch button.active {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 .user-menu {

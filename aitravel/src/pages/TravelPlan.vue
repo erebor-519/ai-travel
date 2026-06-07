@@ -1,11 +1,20 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import AMapService from '../features/map/amap.service.js'
 import generateFinalPlanPrompt from '../features/map/generate-final-plan-prompt.md?raw'
 import LoginModal from '../components/LoginModal.vue'
 import { travelPlanService } from '../utils/travelPlan.js'
 import { cloudbase } from '../utils/cloudbase.js'
+
+const { t, locale } = useI18n()
+
+// 语言切换
+const switchLanguage = (lang) => {
+  locale.value = lang
+  localStorage.setItem('locale', lang)
+}
 
 window._AMapSecurityConfig = {
   securityJsCode: import.meta.env.VITE_AMAP_SECURITY_JS_CODE || '49b1e1860ca6fe3ce62911c2ce619345',
@@ -67,13 +76,13 @@ const savedPlaces = ref([])  // 保存拖动后的地点
 const isSaving = ref(false)
 const saveMessage = ref('')
 // 进度状态
-const progressSteps = ref([
-  { id: 0, name: '生成初步计划', active: false, completed: false },
-  { id: 1, name: '提取地点信息', active: false, completed: false },
-  { id: 2, name: '验证城市信息', active: false, completed: false },
-  { id: 3, name: '搜索POI地点', active: false, completed: false },
-  { id: 4, name: '生成详细计划', active: false, completed: false },
-  { id: 5, name: '加载地图路线', active: false, completed: false }
+const progressSteps = computed(() => [
+  { id: 0, name: t('travelPlan.steps.step0'), active: false, completed: false },
+  { id: 1, name: t('travelPlan.steps.step1'), active: false, completed: false },
+  { id: 2, name: t('travelPlan.steps.step2'), active: false, completed: false },
+  { id: 3, name: t('travelPlan.steps.step3'), active: false, completed: false },
+  { id: 4, name: t('travelPlan.steps.step4'), active: false, completed: false },
+  { id: 5, name: t('travelPlan.steps.step5'), active: false, completed: false }
 ])
 const currentStep = ref(0)
 const totalSteps = ref(6)
@@ -88,7 +97,7 @@ const amapService = AMapService
 // 保存旅行规划
 const openAmapNavigation = () => {
   if (!savedPlaces.value || savedPlaces.value.length < 2) {
-    alert('请先生成旅行计划并确保有至少2个地点')
+    alert(t('travelPlan.notEnoughPoints'))
     return
   }
   
@@ -127,12 +136,12 @@ const openAmapNavigation = () => {
 
 const saveTravelPlan = async () => {
   if (!planResult.value) {
-    saveMessage.value = '请先生成旅行计划'
+    saveMessage.value = t('travelPlan.noPlan')
     return
   }
   
   if (!isLoggedIn.value) {
-    saveMessage.value = '请先登录'
+    saveMessage.value = t('travelPlan.error')
     openLoginModal()
     return
   }
@@ -141,7 +150,7 @@ const saveTravelPlan = async () => {
   saveMessage.value = ''
   
   try {
-    const title = planResult.value.split('\n')[0]?.substring(0, 50) || '未命名规划'
+    const title = planResult.value.split('\n')[0]?.substring(0, 50) || (locale.value === 'zh-CN' ? '未命名规划' : 'Untitled Plan')
     const placesToSave = savedPlaces.value ? JSON.parse(JSON.stringify(savedPlaces.value)) : []
     
     const result = await travelPlanService.savePlan(
@@ -152,16 +161,16 @@ const saveTravelPlan = async () => {
     )
     
     if (result.success) {
-      saveMessage.value = '保存成功！'
+      saveMessage.value = t('travelPlan.saveMessage')
       setTimeout(() => {
         saveMessage.value = ''
       }, 2000)
     } else {
-      saveMessage.value = result.message || '保存失败'
+      saveMessage.value = result.message || (locale.value === 'zh-CN' ? '保存失败' : 'Save failed')
     }
   } catch (error) {
     console.error('保存失败:', error)
-    saveMessage.value = '保存失败，请稍后重试'
+    saveMessage.value = t('travelPlan.errors.saveFailed')
   } finally {
     isSaving.value = false
   }
@@ -171,7 +180,7 @@ const saveTravelPlan = async () => {
 
 const generateTravelPlan = async () => {
   if (!travelInput.value.trim()) {
-    errorMessage.value = '请输入旅行需求'
+    errorMessage.value = t('travelPlan.errors.pleaseEnter')
     return
   }
 
@@ -470,6 +479,9 @@ const showRouteOnMap = async (places) => {
     // 检查是否已取消
     if (isCancelled) return
     
+    // 用于存储序号标记
+    let numberedMarkers = []
+    
     // 创建 DragRoute
     currentDragRoute = new window.AMap.DragRoute(map, path, window.AMap.DrivingPolicy.LEAST_FEE)
     
@@ -479,6 +491,10 @@ const showRouteOnMap = async (places) => {
     // 监听路径规划完成事件（初始加载和拖动后都会触发）
     currentDragRoute.on('complete', function(e) {
       console.log('路线规划完成')
+      
+      // 清理之前的序号标记
+      numberedMarkers.forEach(marker => marker.setMap(null))
+      numberedMarkers = []
       
       // 从 e.data 获取最新的起点、途经点、终点
       const newPlaces = []
@@ -513,6 +529,17 @@ const showRouteOnMap = async (places) => {
       
       console.log('保存的地点:', newPlaces)
       savedPlaces.value = newPlaces
+      
+      // 为每个地点添加序号标记
+      newPlaces.forEach((place, index) => {
+        const marker = new window.AMap.Marker({
+          position: place.location,
+          content: `<div style="background: #1890ff; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: bold;">${index + 1}</div>`,
+          offset: new window.AMap.Pixel(-12, -12)
+        })
+        marker.setMap(map)
+        numberedMarkers.push(marker)
+      })
     })
     
     currentDragRoute.search()
@@ -656,23 +683,27 @@ onBeforeUnmount(() => {
   <div class="travel-plan-page">
     <!-- 头部导航 -->
     <header class="header">
-      <h1>AI 智能旅行助手</h1>
+      <h1>{{ t('home.title') }}</h1>
       <nav>
         <ul>
           <li>
-            <router-link to="/">首页</router-link>
+            <router-link to="/">{{ t('nav.home') }}</router-link>
           </li>
           <li>
-            <router-link to="/explore">探索</router-link>
+            <router-link to="/explore">{{ t('nav.explore') }}</router-link>
           </li>
           <li>
-            <router-link to="/poi-experience">足迹</router-link>
+            <router-link to="/poi-experience">{{ t('nav.footmarks') }}</router-link>
           </li>
           <li>
-            <router-link to="/travel-plan">规划</router-link>
+            <router-link to="/travel-plan">{{ t('nav.plan') }}</router-link>
+          </li>
+          <li class="lang-switch">
+            <button @click="switchLanguage('zh-CN')" :class="{ active: locale === 'zh-CN' }">中</button>
+            <button @click="switchLanguage('en-US')" :class="{ active: locale === 'en-US' }">EN</button>
           </li>
           <li v-if="!isLoggedIn">
-            <a href="#" @click.prevent="openLoginModal">登录</a>
+            <a href="#" @click.prevent="openLoginModal">{{ t('common.login') }}</a>
           </li>
           <li v-else class="user-menu">
             <div class="user-info" @click="goToProfile">
@@ -698,12 +729,12 @@ onBeforeUnmount(() => {
           {{ leftPanelCollapsed ? '→' : '×' }}
         </button>
         <div class="plan-generator" v-show="!leftPanelCollapsed">
-          <h2>旅行计划生成器</h2>
+          <h2>{{ t('travelPlan.title') }}</h2>
           <div class="input-section">
             <input 
               v-model="travelInput"
               type="text" 
-              placeholder="例如：北京5日游，喜欢历史文化" 
+              :placeholder="locale === 'zh-CN' ? '例如：北京5日游，喜欢历史文化' : 'e.g.: 5-day tour in Beijing, interested in history and culture'" 
               class="travel-input"
             />
             <button 
@@ -711,7 +742,7 @@ onBeforeUnmount(() => {
               @click="generateTravelPlan"
               :disabled="isLoading"
             >
-              {{ isLoading ? '生成中...（预计约1分钟）' : '生成计划' }}
+              {{ isLoading ? t('travelPlan.generating') : t('travelPlan.generateBtn') }}
             </button>
           </div>
           
@@ -723,7 +754,7 @@ onBeforeUnmount(() => {
           <div v-if="isLoading" class="progress-section">
             <div class="progress-info">
               <div class="progress-stats">
-                <span class="step-count">步骤 {{ currentStep + 1 }} / {{ totalSteps }}</span>
+                <span class="step-count">{{ locale === 'zh-CN' ? '步骤' : 'Step' }} {{ currentStep + 1 }} / {{ totalSteps }}</span>
                 <span class="progress-percentage">{{ progressPercentage }}%</span>
               </div>
               <div class="progress-bar">
@@ -750,7 +781,7 @@ onBeforeUnmount(() => {
           </div>
           
           <div v-if="planResult" class="plan-result">
-            <h3>您的旅行计划</h3>
+            <h3>{{ t('travelPlan.yourPlan') }}</h3>
             
             <!-- 可编辑的计划文本 -->
             <div class="plan-display">
@@ -761,13 +792,13 @@ onBeforeUnmount(() => {
               ></textarea>
               <div class="plan-actions">
                 <button class="btn-primary" @click="saveTravelPlan" :disabled="isSaving">
-                  {{ isSaving ? '保存中...' : '保存计划' }}
+                  {{ isSaving ? t('travelPlan.saving') : t('travelPlan.saveBtn') }}
                 </button>
                 <button class="btn-amap" @click="openAmapNavigation" :disabled="!savedPlaces || savedPlaces.length < 2">
-                  在高德地图查看路线
+                  {{ t('travelPlan.openAmap') }}
                 </button>
               </div>
-              <div class="save-tip">提示：您可以在地图上拖动途径点调整路线，保存时会保存您调整后的位置</div>
+              <div class="save-tip">{{ t('travelPlan.saveTip') }}</div>
               <div v-if="saveMessage" class="save-message">{{ saveMessage }}</div>
             </div>
           </div>
@@ -856,6 +887,30 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+.lang-switch {
+  display: flex;
+  gap: 4px;
+}
+
+.lang-switch button {
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: var(--text-white);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.lang-switch button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.lang-switch button.active {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+}
 
 .user-menu {
   display: flex;

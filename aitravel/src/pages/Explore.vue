@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { forumService } from '../utils/forum.js'
 import { cloudbase } from '../utils/cloudbase.js'
 
+const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 
@@ -156,7 +158,7 @@ const viewDestination = async (destination) => {
     destinationIntro.value = response.choices[0].message.content.trim()
   } catch (error) {
     console.error('生成介绍失败:', error)
-    destinationIntro.value = '抱歉，暂时无法获取详细介绍，请稍后重试。'
+    destinationIntro.value = null
   } finally {
     isLoadingIntro.value = false
   }
@@ -172,20 +174,20 @@ const closeDestinationModal = () => {
 <template>
   <div class="explore-page">
     <div class="explore-header">
-      <h1>探索目的地</h1>
+      <h1>{{ t('explore.title') }}</h1>
       <div class="search-bar">
         <div class="search-input-wrapper">
           <input 
             type="text" 
             v-model="searchQuery" 
-            placeholder="搜索景点、城市或体验" 
+            :placeholder="t('explore.searchPlaceholder')" 
             class="search-input"
             @keyup.enter="handleSearch"
           />
           <button v-if="searchQuery" class="clear-btn" @click="clearSearch">×</button>
         </div>
         <button class="search-btn" @click="handleSearch" :disabled="isSearching">
-          {{ isSearching ? '搜索中...' : '搜索' }}
+          {{ isSearching ? t('explore.searching') : t('explore.searchBtn') }}
         </button>
       </div>
     </div>
@@ -193,18 +195,18 @@ const closeDestinationModal = () => {
     <!-- AI 搜索结果区域 -->
     <div v-if="isSearching" class="ai-loading">
       <div class="loading-spinner"></div>
-      <span>正在获取 AI 推荐...</span>
+      <span>{{ t('explore.aiLoading') }}</span>
     </div>
 
     <div v-if="searchError" class="error-message">
-      {{ searchError }}
+      {{ t('explore.searchError') }}
     </div>
 
     <!-- AI 介绍 -->
     <div v-if="aiReply" class="ai-result">
       <div class="ai-result-header">
-        <span class="ai-badge">🤖 AI 助手</span>
-        <span>关于「{{ searchQuery }}」的介绍</span>
+        <span class="ai-badge">🤖 {{ t('explore.aiAssistant') }}</span>
+        <span>{{ t('explore.about') }}「{{ searchQuery }}」</span>
       </div>
       
       <div class="ai-reply">
@@ -214,20 +216,20 @@ const closeDestinationModal = () => {
 
     <!-- 搜索结果统计 -->
     <div v-if="searchResults.length > 0 || relatedPosts.length > 0" class="search-summary">
-      <span v-if="searchResults.length > 0">找到 {{ searchResults.length }} 个相关目的地</span>
-      <span v-if="relatedPosts.length > 0">，{{ relatedPosts.length }} 篇相关帖子</span>
+      <span v-if="searchResults.length > 0">{{ t('explore.foundDestinations', { count: searchResults.length }) }}</span>
+      <span v-if="relatedPosts.length > 0">{{ t('explore.foundPosts', { count: relatedPosts.length }) }}</span>
     </div>
 
     <!-- 相关帖子列表 -->
     <div v-if="relatedPosts.length > 0" class="related-posts-section">
-      <h2>📝 相关旅行帖子</h2>
+      <h2>📝 {{ t('explore.relatedPosts') }}</h2>
       <div class="posts-list">
         <div v-for="post in relatedPosts" :key="post._id" class="post-card" @click="goToPost(post)">
           <div class="post-header">
             <div class="user-avatar-small">
-              {{ (post.userInfo?.nickname || '匿名')[0] }}
+              {{ (post.userInfo?.nickname || t('explore.anonymous'))[0] }}
             </div>
-            <span class="post-author">{{ post.userInfo?.nickname || '匿名用户' }}</span>
+            <span class="post-author">{{ post.userInfo?.nickname || t('explore.anonymous') + '用户' }}</span>
             <span class="post-time">{{ new Date(post.createdAt).toLocaleDateString() }}</span>
           </div>
           <h3 class="post-title">{{ post.title }}</h3>
@@ -241,8 +243,8 @@ const closeDestinationModal = () => {
 
     <!-- 目的地卡片 -->
     <div class="destinations-section">
-      <h2 v-if="searchResults.length > 0">🎯 匹配的目的地</h2>
-      <h2 v-else>🌟 热门目的地</h2>
+      <h2 v-if="searchResults.length > 0">🎯 {{ t('explore.matchingDestinations') }}</h2>
+      <h2 v-else>🌟 {{ t('explore.popularDestinations') }}</h2>
       
       <div class="destinations-grid">
         <div 
@@ -264,7 +266,7 @@ const closeDestinationModal = () => {
             </div>
             <h3>{{ destination.name }}</h3>
             <p>{{ destination.description }}</p>
-            <button class="explore-btn" @click="viewDestination(destination)">了解更多</button>
+            <button class="explore-btn" @click="viewDestination(destination)">{{ t('explore.learnMore') }}</button>
           </div>
         </div>
       </div>
@@ -287,16 +289,16 @@ const closeDestinationModal = () => {
           
           <div v-if="isLoadingIntro" class="intro-loading">
             <div class="loading-spinner"></div>
-            <span>AI 正在生成介绍...</span>
+            <span>{{ t('explore.introLoading') }}</span>
           </div>
           
           <div v-else-if="destinationIntro" class="destination-intro">
-            <div class="ai-badge">🤖 AI 助手</div>
+            <div class="ai-badge">🤖 {{ t('explore.aiAssistant') }}</div>
             <p>{{ destinationIntro }}</p>
           </div>
           
           <div v-else class="intro-error">
-            暂时无法获取详细介绍
+            {{ t('explore.introError') }}
           </div>
         </div>
       </div>

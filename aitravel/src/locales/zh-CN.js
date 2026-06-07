@@ -1,0 +1,132 @@
+export default {
+  common: {
+    loading: '加载中...',
+    save: '保存',
+    cancel: '取消',
+    confirm: '确认',
+    submit: '提交',
+    search: '搜索',
+    reset: '重置',
+    back: '返回',
+    home: '首页',
+    login: '登录',
+    logout: '退出登录',
+    register: '注册',
+    profile: '个人主页',
+    settings: '设置',
+    map: '地图',
+    aiRecommend: 'AI 旅行推荐',
+    destinationRecommend: '目的地推荐',
+    travelPlanner: '旅行规划助手',
+    enterNeeds: '输入您的旅行需求',
+    generatePlan: '生成计划',
+    pleaseEnter: '请输入旅行需求'
+  },
+  nav: {
+    home: '首页',
+    explore: '探索',
+    footmarks: '足迹',
+    plan: '规划'
+  },
+  home: {
+    title: 'AI 智能旅行助手',
+    subtitle: '让旅行更简单',
+    description: '输入您的旅行需求，AI 将为您生成个性化的旅行计划',
+    destinations: {
+      beijing: '北京',
+      shanghai: '上海',
+      chengdu: '成都',
+      beijingDesc: '历史文化名城',
+      shanghaiDesc: '现代都市风情',
+      chengduDesc: '美食休闲之都'
+    }
+  },
+  travelPlan: {
+    title: '旅行计划生成器',
+    placeholder: '例如：北京三日游，想去故宫、长城',
+    generateBtn: '生成计划',
+    generating: '生成中...（预计约1分钟）',
+    yourPlan: '您的旅行计划',
+    saveBtn: '保存计划',
+    saving: '保存中...',
+    saveMessage: '保存成功！',
+    openAmap: '在高德地图查看路线',
+    noPlan: '请先生成旅行计划',
+    notEnoughPoints: '请先生成旅行计划并确保有至少2个地点',
+    error: '请先登录',
+    saveTip: '提示：您可以在地图上拖动途经点调整路线，保存时会保存您调整后的位置',
+    steps: {
+      step0: '生成初步计划',
+      step1: '提取地点信息',
+      step2: '验证城市信息',
+      step3: '搜索POI地点',
+      step4: '生成详细计划',
+      step5: '加载地图路线'
+    },
+    errors: {
+      pleaseEnter: '请输入旅行需求',
+      saveFailed: '保存失败，请稍后重试'
+    }
+  },
+  login: {
+    title: '登录',
+    username: '用户名',
+    password: '密码',
+    loginBtn: '登录',
+    loginSuccess: '登录成功！',
+    loginError: '用户名或密码错误',
+    alreadyLoggedIn: '您已经登录了'
+  },
+  profile: {
+    title: '个人主页',
+    welcome: '欢迎回来',
+    savedPlans: '保存的旅行计划',
+    noPlans: '暂无保存的旅行计划',
+    historyPlans: '历史旅行规划'
+  },
+  explore: {
+    title: '探索目的地',
+    popularDestinations: '热门目的地',
+    matchingDestinations: '匹配的目的地',
+    viewDetails: '查看详情',
+    learnMore: '了解更多',
+    searchPlaceholder: '搜索景点、城市或体验',
+    searchBtn: '搜索',
+    searching: '搜索中...',
+    aiLoading: '正在获取 AI 推荐...',
+    aiAssistant: 'AI 助手',
+    about: '关于',
+    introLoading: 'AI 正在生成介绍...',
+    introError: '抱歉，暂时无法获取详细介绍，请稍后重试。',
+    searchError: '搜索失败，请稍后重试',
+    foundDestinations: '找到 {count} 个相关目的地',
+    foundPosts: '，{count} 篇相关帖子',
+    relatedPosts: '相关旅行帖子',
+    anonymous: '匿名'
+  },
+  footmarks: {
+    title: '足迹',
+    myFootmarks: '我的足迹',
+    addFootmark: '添加足迹',
+    latestPosts: '最新发布',
+    mostLiked: '最多点赞',
+    myPosts: '我发布的',
+    myLikes: '我点赞的',
+    searchPlaceholder: '搜索足迹',
+    search: '搜索',
+    clear: '清空',
+    createPost: '发布足迹',
+    noPosts: '暂无足迹',
+    pleaseLogin: '请先登录',
+    loadFailed: '加载帖子失败',
+    searchFailed: '搜索失败，请稍后重试',
+    importPlan: '导入旅行规划',
+    importSuccess: '旅行规划已导入！',
+    operationFailed: '操作失败',
+    operationFailedRetry: '操作失败，请稍后重试',
+    expand: '展开',
+    collapse: '收起',
+    showRoute: '显示路线',
+    delete: '删除'
+  }
+}

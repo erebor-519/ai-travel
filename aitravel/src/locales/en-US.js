@@ -1,0 +1,132 @@
+export default {
+  common: {
+    loading: 'Loading...',
+    save: 'Save',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    submit: 'Submit',
+    search: 'Search',
+    reset: 'Reset',
+    back: 'Back',
+    home: 'Home',
+    login: 'Login',
+    logout: 'Logout',
+    register: 'Register',
+    profile: 'Profile',
+    settings: 'Settings',
+    map: 'Map',
+    aiRecommend: 'AI Travel Recommendations',
+    destinationRecommend: 'Destination Recommendations',
+    travelPlanner: 'Travel Planning Assistant',
+    enterNeeds: 'Enter your travel needs',
+    generatePlan: 'Generate Plan',
+    pleaseEnter: 'Please enter travel needs'
+  },
+  nav: {
+    home: 'Home',
+    explore: 'Explore',
+    footmarks: 'Footmarks',
+    plan: 'Plan'
+  },
+  home: {
+    title: 'AI Smart Travel Assistant',
+    subtitle: 'Make Travel Easier',
+    description: 'Enter your travel needs, AI will generate a personalized travel plan for you',
+    destinations: {
+      beijing: 'Beijing',
+      shanghai: 'Shanghai',
+      chengdu: 'Chengdu',
+      beijingDesc: 'Famous Historical & Cultural City',
+      shanghaiDesc: 'Modern Metropolis Style',
+      chengduDesc: 'Gourmet & Leisure Capital'
+    }
+  },
+  travelPlan: {
+    title: 'Travel Plan Generator',
+    placeholder: 'e.g.: 3-day tour in Beijing, want to visit Forbidden City and Great Wall',
+    generateBtn: 'Generate Plan',
+    generating: 'Generating... (about 1 minute)',
+    yourPlan: 'Your Travel Plan',
+    saveBtn: 'Save Plan',
+    saving: 'Saving...',
+    saveMessage: 'Saved successfully!',
+    openAmap: 'View Route on AMap',
+    noPlan: 'Please generate a travel plan first',
+    notEnoughPoints: 'Please generate a travel plan and ensure at least 2 locations',
+    error: 'Please login first',
+    saveTip: 'Tip: You can drag the waypoints on the map to adjust the route, and your adjusted positions will be saved when saving',
+    steps: {
+      step0: 'Generate Initial Plan',
+      step1: 'Extract Location Info',
+      step2: 'Verify City Info',
+      step3: 'Search POI Locations',
+      step4: 'Generate Detailed Plan',
+      step5: 'Load Map Route'
+    },
+    errors: {
+      pleaseEnter: 'Please enter travel needs',
+      saveFailed: 'Save failed, please try again later'
+    }
+  },
+  login: {
+    title: 'Login',
+    username: 'Username',
+    password: 'Password',
+    loginBtn: 'Login',
+    loginSuccess: 'Login successful!',
+    loginError: 'Incorrect username or password',
+    alreadyLoggedIn: 'You are already logged in'
+  },
+  profile: {
+    title: 'Profile',
+    welcome: 'Welcome back',
+    savedPlans: 'Saved Travel Plans',
+    noPlans: 'No saved travel plans yet',
+    historyPlans: 'Historical Travel Plans'
+  },
+  explore: {
+    title: 'Explore Destinations',
+    popularDestinations: 'Popular Destinations',
+    matchingDestinations: 'Matching Destinations',
+    viewDetails: 'View Details',
+    learnMore: 'Learn More',
+    searchPlaceholder: 'Search attractions, cities or experiences',
+    searchBtn: 'Search',
+    searching: 'Searching...',
+    aiLoading: 'Getting AI recommendations...',
+    aiAssistant: 'AI Assistant',
+    about: 'About',
+    introLoading: 'AI is generating introduction...',
+    introError: 'Sorry, cannot get detailed introduction temporarily, please try again later.',
+    searchError: 'Search failed, please try again later',
+    foundDestinations: 'Found {count} related destinations',
+    foundPosts: ', {count} related posts',
+    relatedPosts: 'Related Travel Posts',
+    anonymous: 'Anonymous'
+  },
+  footmarks: {
+    title: 'Footmarks',
+    myFootmarks: 'My Footmarks',
+    addFootmark: 'Add Footmark',
+    latestPosts: 'Latest Posts',
+    mostLiked: 'Most Liked',
+    myPosts: 'My Posts',
+    myLikes: 'My Likes',
+    searchPlaceholder: 'Search footmarks',
+    search: 'Search',
+    clear: 'Clear',
+    createPost: 'Create Post',
+    noPosts: 'No footmarks yet',
+    pleaseLogin: 'Please login first',
+    loadFailed: 'Failed to load posts',
+    searchFailed: 'Search failed, please try again later',
+    importPlan: 'Import Travel Plan',
+    importSuccess: 'Travel plan imported!',
+    operationFailed: 'Operation failed',
+    operationFailedRetry: 'Operation failed, please try again later',
+    expand: 'Expand',
+    collapse: 'Collapse',
+    showRoute: 'Show Route',
+    delete: 'Delete'
+  }
+}
