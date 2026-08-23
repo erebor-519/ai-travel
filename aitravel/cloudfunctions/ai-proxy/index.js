@@ -4,8 +4,9 @@ const app = cloudbase.init({
   env: process.env.TCB_ENV || cloudbase.SYMBOL_CURRENT_ENV
 })
 
-// 讯飞星火API配置 - 密钥存放在云端，不暴露给前端
-const SPARK_API_URL = 'https://maas-api.cn-huabei-1.xf-yun.com/v2'
+// 讯飞星辰 MaaS 推理服务 API 配置 - 密钥存放在云端，不暴露给前端
+// OpenAI 兼容端点：maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions
+const SPARK_API_URL = 'https://maas-api.cn-huabei-1.xf-yun.com/v2/chat/completions'
 
 // 从环境变量获取API密钥，如果没有设置环境变量则使用默认值
 // 注意：您需要在云函数配置中设置 SPARK_API_KEY 环境变量
@@ -37,7 +38,7 @@ async function handleChat(event) {
   }
 
   const requestBody = {
-    model: model || 'astron-code-latest',
+    model: model || 'xopqwen36v35b',
     messages,
     temperature: temperature || 0.7,
     max_completion_tokens: max_tokens || 4096,
