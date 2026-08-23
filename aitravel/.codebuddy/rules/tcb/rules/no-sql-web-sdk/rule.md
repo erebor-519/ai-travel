@@ -1,7 +1,7 @@
 ---
 name: cloudbase-document-database-web-sdk
-description: Use CloudBase document database Web SDK to query, create, update, and delete data. Supports complex queries, pagination, aggregation, realtime, and geolocation queries.
-version: 2.18.0
+description: Use CloudBase document database Web SDK only for confirmed NoSQL collection work. Query, create, update, and delete document data; if the task mentions PostgreSQL / CloudBase PG / app.rdb(), route to postgresql-development instead.
+version: 2.24.1
 alwaysApply: false
 ---
 
@@ -40,6 +40,23 @@ Keep local `references/...` paths for files that ship with the current skill dir
 - Server-side or cloud-function database access.
 - SQL / MySQL database operations.
 - Pure resource-permission administration with no browser SDK code.
+- **NEW business tables that the task explicitly asks to put in CloudBase PostgreSQL (CloudBase PG).** Before applying this skill, call `envQuery(action="info", envId=...)` and read `EnvInfo.RuntimeBackends`. If `postgresql === true` AND the task asks for a new business table to live in PG, switch to the `postgresql-development` skill for that table: it goes through `app.rdb()`, uses PG row-level security (`CREATE POLICY`), and uploads via `app.storage.from('<bucket>').upload('<key>', file)` against an explicitly-created pgstore bucket.
+  - Existing NoSQL collections in the same env keep using THIS skill — PG and NoSQL coexist in CloudBase PG environments. The rule is "follow the task / existing surface", not "PG env forbids NoSQL".
+
+### SDK Code vs MCP Tools
+
+**When to write SDK code (use this skill):**
+- The task explicitly asks to "modify code" or "use SDK"
+- The task asks to implement app/frontend logic
+- The task mentions specific SDK methods like `db.collection().add()`, `.get()`, `.update()`
+- The context shows an existing Web project with SDK initialization (e.g., `index.js` already has `cloudbase.init()`)
+
+**When to use MCP tools instead:**
+- The task asks to manage CloudBase resources (create collection, set permissions, etc.)
+- The task involves admin/management operations without writing app code
+- The task mentions tools like `writeNoSqlDatabaseContent`, `managePermissions`, etc.
+
+**Key distinction:** If the user says "使用 JS SDK 执行 XX 操作" (use JS SDK to perform XX operation) or "修改代码" (modify code), write SDK code in the project files. Do not use MCP database write tools for app-level data operations.
 
 ### Common mistakes / gotchas
 

@@ -24,9 +24,11 @@
 
 | 函数名 | 功能 | 状态 |
 |--------|------|------|
+| ai-proxy | AI 模型代理（讯飞星火） | 已部署 |
 | auth | 用户认证 | 已部署 |
 | forum | 论坛帖子管理 | 已部署 |
 | travel-plans | 旅行规划管理 | 已部署 |
+| upload-image | 图片上传 | 已部署 |
 
 ## 开发指南
 
@@ -49,8 +51,15 @@ npm run build
 
 - **环境ID**: footmarks-d0giax6g8a547ce19
 - **静态托管**: 已配置
-- **云函数**: 3个 (auth, forum, travel-plans)
+- **云函数**: 5个 (ai-proxy, auth, forum, travel-plans, upload-image)
 - **数据库**: posts 集合 (论坛帖子), users 集合 (用户信息)
+- **存储桶**: 666f-footmarks-d0giax6g8a547ce19-1358671790 (图片存储)
+
+## 部署记录
+
+- **最近部署时间**: 2026-08-23
+- **部署方式**: CloudBase MCP (更新云函数代码 + 静态托管上传)
+- **静态托管域名**: https://footmarks-d0giax6g8a547ce19-1358671790.tcloudbaseapp.com/
 
 ## 控制台管理
 

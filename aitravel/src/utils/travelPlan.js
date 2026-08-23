@@ -3,7 +3,7 @@ import { cloudbase } from './cloudbase.js'
 class TravelPlanService {
   constructor() {
     this.functionName = 'travel-plans'
-  }
+  }a
 
   // 保存旅行规划
   async savePlan(title, content, places, options = {}) {
