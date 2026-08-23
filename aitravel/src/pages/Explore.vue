@@ -25,7 +25,7 @@ const callAI = async (messages, options = {}) => {
     data: {
       action: 'chat',
       messages,
-      model: options.model || 'astron-code-latest',
+      model: options.model || 'xopqwen36v35b',
       temperature: options.temperature || 0.7,
       max_tokens: options.max_completion_tokens || 800,
       stream: false

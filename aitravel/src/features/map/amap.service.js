@@ -28,7 +28,7 @@ class AMapService {
   // 通过CloudBase云函数调用AI（密钥存放在云端，不暴露给前端）
   async callAI(messages, options = {}) {
     const {
-      model = 'astron-code-latest',
+      model = 'xopqwen36v35b',
       temperature = 0.7,
       max_completion_tokens = 4096,
       top_p = 0.95,

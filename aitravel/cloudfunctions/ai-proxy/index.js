@@ -5,11 +5,11 @@ const app = cloudbase.init({
 })
 
 // 讯飞星火API配置 - 密钥存放在云端，不暴露给前端
-const SPARK_API_URL = 'https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions'
+const SPARK_API_URL = 'https://maas-api.cn-huabei-1.xf-yun.com/v2'
 
 // 从环境变量获取API密钥，如果没有设置环境变量则使用默认值
 // 注意：您需要在云函数配置中设置 SPARK_API_KEY 环境变量
-const SPARK_API_KEY = process.env.SPARK_API_KEY || 'b644c04f33fd3a89ed601ec9cdadfddb:MDM3YTllYWVjZTAwMjY4MTM4ZTlhM2Vm'
+const SPARK_API_KEY = process.env.SPARK_API_KEY || '11319299b0674fed8cb178a2f7047233:MzljMjVmMDU1YjVjNDQ4YmMyODYwYmJk'
 
 console.log('AI Proxy function initialized. API Key set:', SPARK_API_KEY ? 'Yes (from environment)' : 'No (using default)')
 

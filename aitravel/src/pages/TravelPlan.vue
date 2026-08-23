@@ -348,7 +348,7 @@ const generateTravelPlan = async () => {
             })
           }
         ],
-        model: 'astron-code-latest',
+        model: 'xopqwen36v35b',
         temperature: 0.7,
         max_tokens: 8000,
         stream: false
